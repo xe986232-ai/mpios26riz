@@ -264,6 +264,23 @@ export const PANELS_MARKUP = `
     <button class="reset-btn" id="resetBtn">Reset ke default</button>
   </div>
 
+  <div class="control-panel">
+    <h3>Zoom & Posisi Konten</h3>
+    <div class="sub">Atur seberapa besar konten mengisi kanvas 9:16, dan geser posisinya naik/turun</div>
+
+    <div class="row">
+      <div class="row-head"><label for="ctrlStageZoom">Zoom Konten</label><span class="val" id="valStageZoom">118%</span></div>
+      <input type="range" id="ctrlStageZoom" min="100" max="200" step="1" value="118">
+    </div>
+
+    <div class="row">
+      <div class="row-head"><label for="ctrlStageOffsetY">Posisi Vertikal</label><span class="val" id="valStageOffsetY">0%</span></div>
+      <input type="range" id="ctrlStageOffsetY" min="-50" max="50" step="1" value="0">
+    </div>
+
+    <button class="reset-btn" id="resetStageBtn">Reset ke default</button>
+  </div>
+
   <div class="control-panel cc-opacity-panel">
     <h3>Customize Control Center</h3>
     <div class="sub">Atur opacity semua kartu Control Center</div>

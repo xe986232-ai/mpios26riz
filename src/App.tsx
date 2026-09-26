@@ -139,6 +139,8 @@ export default function App() {
       coverRadius: 70,
       coverSmooth: 100,
       ccOpacity: 20,
+      stageZoom: 118,
+      stageOffsetY: 0,
     };
 
     const ctrlRadius = $<HTMLInputElement>('ctrlRadius');
@@ -357,6 +359,32 @@ export default function App() {
       applyCcOpacity();
     });
 
+    // ==== Panel: Zoom & Posisi Konten — kontrol --stage-zoom / --stage-offset-y yang dipakai .stage di App.css ====
+    const ctrlStageZoom = $<HTMLInputElement>('ctrlStageZoom');
+    const ctrlStageOffsetY = $<HTMLInputElement>('ctrlStageOffsetY');
+    const valStageZoom = $('valStageZoom');
+    const valStageOffsetY = $('valStageOffsetY');
+    const resetStageBtn = $('resetStageBtn');
+
+    function applyStageTransform() {
+      const zoom = Number(ctrlStageZoom.value);
+      const offsetY = Number(ctrlStageOffsetY.value);
+      stage.style.setProperty('--stage-zoom', String(zoom));
+      stage.style.setProperty('--stage-offset-y', String(offsetY));
+      valStageZoom.textContent = zoom + '%';
+      valStageOffsetY.textContent = offsetY + '%';
+    }
+
+    on(ctrlStageZoom, 'input', applyStageTransform);
+    on(ctrlStageOffsetY, 'input', applyStageTransform);
+    [ctrlStageZoom, ctrlStageOffsetY].forEach((el) => on(el, 'click', (e: Event) => e.stopPropagation()));
+    on(resetStageBtn, 'click', (e: Event) => {
+      e.stopPropagation();
+      ctrlStageZoom.value = String(DEFAULTS.stageZoom);
+      ctrlStageOffsetY.value = String(DEFAULTS.stageOffsetY);
+      applyStageTransform();
+    });
+
     // ==== Upload gambar custom untuk album art ====
     const ctrlAlbumArt = $<HTMLInputElement>('ctrlAlbumArt');
     const uploadArtBtn = $('uploadArtBtn');
@@ -434,6 +462,7 @@ export default function App() {
       };
       cover: { radius: number; smoothing: number };
       ccOpacity: number;
+      stage?: { zoom: number; offsetY: number };
       song: { title: string; artist: string; font: string };
       albumArt: string | null;
     };
@@ -455,6 +484,10 @@ export default function App() {
           smoothing: Number(ctrlCoverSmooth.value),
         },
         ccOpacity: Number(ctrlCcOpacity.value),
+        stage: {
+          zoom: Number(ctrlStageZoom.value),
+          offsetY: Number(ctrlStageOffsetY.value),
+        },
         song: {
           title: ctrlSongTitle.value,
           artist: ctrlSongArtist.value,
@@ -475,6 +508,8 @@ export default function App() {
       ctrlCoverRadius.value = String(data.cover.radius);
       ctrlCoverSmooth.value = String(data.cover.smoothing);
       ctrlCcOpacity.value = String(data.ccOpacity);
+      ctrlStageZoom.value = String(data.stage?.zoom ?? DEFAULTS.stageZoom);
+      ctrlStageOffsetY.value = String(data.stage?.offsetY ?? DEFAULTS.stageOffsetY);
       ctrlSongTitle.value = data.song.title;
       ctrlSongArtist.value = data.song.artist;
       ctrlMusicFont.value = data.song.font;
@@ -499,6 +534,7 @@ export default function App() {
       applyCardStyle();
       applyAlbumArtStyle();
       applyCcOpacity();
+      applyStageTransform();
       applyMusicFont();
       setBorderRotation(data.card.rotate);
     }
@@ -744,6 +780,7 @@ export default function App() {
     applyCardStyle();
     applyAlbumArtStyle();
     applyCcOpacity();
+    applyStageTransform();
     applyMusicFont();
     setBorderRotation(DEFAULTS.rotate);
     // Buka player otomatis supaya perubahan customize langsung terlihat
