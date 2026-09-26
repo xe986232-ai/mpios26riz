@@ -91,10 +91,9 @@
   .cc svg > rect, .cc svg g[clip-path] > *, .cc svg [id^="ccBorder"], .cc svg g[style*="plus-lighter"] {
     transition: opacity .45s ease, filter .45s ease;
   }
-  .stage.open .cc svg g[clip-path] > image { filter: brightness(0); }
+  .stage.open .cc svg g[clip-path] > foreignObject .wallpaper-video { filter: brightness(0); }
   .stage.open .cc .cc-hit { opacity: 0 !important; pointer-events: none !important; }
   .cc svg > rect.phone-frame { opacity: 1 !important; }
-  .cc svg g[clip-path] > image { filter: brightness(0) !important; }
   .player { z-index: 2; }
   .stage::after { content: ""; position: absolute; left: 5.33%; top: 2.5%; width: 89.33%; height: 95%; border-radius: 13.5% / 6.2%; z-index: 1; pointer-events: none; opacity: 0; background: rgba(0,0,0,0); -webkit-backdrop-filter: blur(0px); backdrop-filter: blur(0px); transition: opacity .5s ease, backdrop-filter .5s ease, -webkit-backdrop-filter .5s ease, background .5s ease; }
   .stage.open::after { opacity: 1; background: rgba(0,0,0,.15); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
