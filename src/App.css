@@ -32,6 +32,7 @@
   .stage {
     position: relative; height: auto; aspect-ratio: 450 / 920;
     width: calc(var(--stage-zoom, 118) * 1%);
+    flex-shrink: 0;
     transform: translateY(calc(var(--stage-offset-y, 0) * 1%));
   }
   .cc { position: absolute; inset: 0; }
