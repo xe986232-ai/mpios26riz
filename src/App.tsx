@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import html2canvas from 'html2canvas';
+import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { STAGE_MARKUP, PANELS_MARKUP } from './markup';
 
 // ==== Helper untuk Export Frame ====
@@ -71,6 +72,20 @@ function blurAndDim(
     };
     img.onerror = () => reject(new Error('Gagal memuat gambar untuk diblur'));
     img.src = srcDataUrl;
+  });
+}
+
+// Seek <video> ke waktu tertentu dan tunggu sampai frame di waktu itu benar-benar siap digambar
+// (event 'seeked'), supaya tiap frame video yang di-capture akurat sesuai posisi yang diminta —
+// bukan posisi lama yang kebetulan masih nyangkut di buffer.
+function seekVideoTo(video: HTMLVideoElement, time: number): Promise<void> {
+  return new Promise((resolve) => {
+    const onSeeked = () => {
+      video.removeEventListener('seeked', onSeeked);
+      resolve();
+    };
+    video.addEventListener('seeked', onSeeked);
+    video.currentTime = time;
   });
 }
 
@@ -626,19 +641,24 @@ export default function App() {
       else stopTick();
     });
 
-    // ==== Export Frame: capture KANVAS 9:16 (.stage-frame) apa adanya jadi PNG 1080x1920 ====
+    // ==== Export Frame & Export Video: capture KANVAS 9:16 (.stage-frame) apa adanya ====
     // Patokan export sekarang .stage-frame (kanvas yang tampak di layar, sudah terkunci rasio 9:16 lewat CSS),
     // BUKAN lagi area layar HP di dalam SVG (yang rasionya ~402:874, beda dari kanvas). Jadi apa yang kelihatan
     // di kanvas — termasuk ruang kosong letterbox kiri-kanan kalau ada — itulah yang ikut ke-export, 1:1.
     const exportFrameBtn = $<HTMLButtonElement>('exportFrameBtn');
+    const exportVideoBtn = $<HTMLButtonElement>('exportVideoBtn');
+    const exportVideoProgressWrap = $('exportVideoProgressWrap');
+    const exportVideoProgressFill = $('exportVideoProgressFill');
+    const exportVideoProgressLabel = $('exportVideoProgressLabel');
     const EXPORT_H = 1920; // tinggi target hasil export
     const EXPORT_W = 1080; // lebar target hasil export — dikunci 9:16, sama seperti .stage-frame
     const stageFrame = stage.parentElement as HTMLElement; // .stage-frame — elemen kanvas yang jadi acuan crop export
-    on(exportFrameBtn, 'click', async (e: Event) => {
-      e.stopPropagation();
-      const originalLabel = exportFrameBtn.textContent || 'Export Frame (PNG 1080x1920)';
-      exportFrameBtn.disabled = true;
-      exportFrameBtn.textContent = 'Membuat gambar...';
+    const wallpaperVideoEl = root.querySelector<HTMLVideoElement>('.wallpaper-video');
+
+    // Capture SATU frame kanvas (state DOM saat fungsi ini dipanggil) → canvas EXPORT_W x EXPORT_H.
+    // Dipakai baik oleh Export Frame (sekali panggil) maupun Export Video (dipanggil berulang per frame,
+    // dengan state — elapsed, posisi video wallpaper, dll — sudah di-advance manual sebelum tiap panggilan).
+    async function captureStageCanvas(): Promise<HTMLCanvasElement> {
       let cloneWrap: HTMLDivElement | null = null;
       try {
         const rect = stageFrame.getBoundingClientRect();
@@ -647,7 +667,7 @@ export default function App() {
         const scale = EXPORT_H / rect.height;
 
         // ==== 1. Bekukan frame video wallpaper saat ini + siapkan lapisan blur pengganti backdrop-filter ====
-        const videoEl = root.querySelector<HTMLVideoElement>('.wallpaper-video');
+        const videoEl = wallpaperVideoEl;
         const videoFO = videoEl?.closest('foreignObject') || null;
         const wx = Number(videoFO?.getAttribute('x') ?? 24);
         const wy = Number(videoFO?.getAttribute('y') ?? 23);
@@ -760,7 +780,19 @@ export default function App() {
         const ctx = out.getContext('2d');
         if (!ctx) throw new Error('Canvas context tidak tersedia');
         ctx.drawImage(captured, 0, 0, captured.width, captured.height, 0, 0, EXPORT_W, EXPORT_H);
+        return out;
+      } finally {
+        if (cloneWrap && cloneWrap.parentNode) cloneWrap.parentNode.removeChild(cloneWrap);
+      }
+    }
 
+    on(exportFrameBtn, 'click', async (e: Event) => {
+      e.stopPropagation();
+      const originalLabel = exportFrameBtn.textContent || 'Export Frame (PNG 1080x1920)';
+      exportFrameBtn.disabled = true;
+      exportFrameBtn.textContent = 'Membuat gambar...';
+      try {
+        const out = await captureStageCanvas();
         const blob: Blob | null = await new Promise((resolve) => out.toBlob(resolve, 'image/png'));
         if (!blob) throw new Error('Gagal membuat PNG');
         const url = URL.createObjectURL(blob);
@@ -773,11 +805,119 @@ export default function App() {
         console.error('Export frame gagal:', err);
         alert('Gagal export gambar. Coba lagi.');
       } finally {
-        if (cloneWrap && cloneWrap.parentNode) cloneWrap.parentNode.removeChild(cloneWrap);
         exportFrameBtn.disabled = false;
         exportFrameBtn.textContent = originalLabel;
       }
     });
+
+    // ==== Export Video: render N frame secara DETERMINISTIK (state di-advance manual per frame,
+    // bukan capture real-time), lalu encode tiap frame pakai WebCodecs VideoEncoder + mux jadi .mp4
+    // pakai mp4-muxer. Semua di browser, tanpa server/Playwright — hasilnya tetap akurat & konsisten
+    // walau device lemot, karena kita yang mengontrol "waktu" tiap frame, bukan menunggu jam asli. ====
+    const VIDEO_FPS = 30;
+    const MAX_EXPORT_DURATION_SEC = 60; // batas atas — nanti UI pemilihan durasi tinggal clamp ke sini
+    const DEFAULT_EXPORT_DURATION_SEC = 10; // sementara fixed; pemilihan durasi oleh user menyusul
+
+    on(exportVideoBtn, 'click', async (e: Event) => {
+      e.stopPropagation();
+      void exportVideo(DEFAULT_EXPORT_DURATION_SEC);
+    });
+
+    async function exportVideo(requestedDurationSec: number) {
+      if (typeof VideoEncoder === 'undefined') {
+        alert('Browser ini belum mendukung WebCodecs (VideoEncoder). Coba pakai Chrome/Edge versi terbaru.');
+        return;
+      }
+
+      const durationSec = Math.max(1, Math.min(requestedDurationSec, MAX_EXPORT_DURATION_SEC));
+      const totalFrames = Math.round(durationSec * VIDEO_FPS);
+      const frameDurationUs = Math.round(1_000_000 / VIDEO_FPS);
+
+      const originalLabel = exportVideoBtn.textContent || 'Export Video (MP4)';
+      exportVideoBtn.disabled = true;
+      exportFrameBtn.disabled = true;
+      exportVideoBtn.textContent = 'Merender...';
+      exportVideoProgressWrap.style.display = 'block';
+      exportVideoProgressFill.style.width = '0%';
+      exportVideoProgressLabel.textContent = `Merender frame 0/${totalFrames}...`;
+
+      // Simpan state elapsed/play asli supaya bisa dikembalikan setelah render selesai
+      const originalElapsed = elapsed;
+      const wasPlaying = isPlaying;
+      stopTick();
+
+      const target = new ArrayBufferTarget();
+      const muxer = new Muxer({
+        target,
+        video: { codec: 'avc', width: EXPORT_W, height: EXPORT_H },
+        fastStart: 'in-memory',
+      });
+
+      const encoder = new VideoEncoder({
+        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+        error: (err) => console.error('VideoEncoder error:', err),
+      });
+      encoder.configure({
+        codec: 'avc1.640028',
+        width: EXPORT_W,
+        height: EXPORT_H,
+        bitrate: 8_000_000,
+        framerate: VIDEO_FPS,
+        hardwareAcceleration: 'prefer-hardware',
+      });
+
+      try {
+        for (let i = 0; i < totalFrames; i++) {
+          // ==== 1. Advance state manual (deterministik) — elapsed timer & posisi video wallpaper ====
+          elapsed = originalElapsed + i / VIDEO_FPS;
+          if (elapsed > SONG_TOTAL) elapsed -= SONG_TOTAL;
+          renderDuration();
+
+          if (wallpaperVideoEl && wallpaperVideoEl.duration) {
+            const t = (i / VIDEO_FPS) % wallpaperVideoEl.duration;
+            await seekVideoTo(wallpaperVideoEl, t);
+          }
+
+          // ==== 2. Capture frame kanvas (reuse pipeline yang sama dengan Export Frame) ====
+          const canvas = await captureStageCanvas();
+
+          // ==== 3. Encode frame ====
+          const frame = new VideoFrame(canvas, {
+            timestamp: i * frameDurationUs,
+            duration: frameDurationUs,
+          });
+          encoder.encode(frame, { keyFrame: i % (VIDEO_FPS * 2) === 0 });
+          frame.close();
+
+          const pct = Math.round(((i + 1) / totalFrames) * 100);
+          exportVideoProgressFill.style.width = pct + '%';
+          exportVideoProgressLabel.textContent = `Merender frame ${i + 1}/${totalFrames}...`;
+        }
+
+        await encoder.flush();
+        muxer.finalize();
+
+        const blob = new Blob([target.buffer], { type: 'video/mp4' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `control-center-video-${EXPORT_W}x${EXPORT_H}.mp4`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('Export video gagal:', err);
+        alert('Gagal export video. Coba lagi.');
+      } finally {
+        encoder.close();
+        elapsed = originalElapsed;
+        renderDuration();
+        if (wasPlaying) startTick();
+        exportVideoBtn.disabled = false;
+        exportFrameBtn.disabled = false;
+        exportVideoBtn.textContent = originalLabel;
+        exportVideoProgressWrap.style.display = 'none';
+      }
+    }
 
     applyCardStyle();
     applyAlbumArtStyle();
