@@ -282,4 +282,10 @@ export const PANELS_MARKUP = `
     <button class="reset-btn" id="importSettingsBtn" style="margin-top:8px;">Import Settings</button>
   </div>
 
+  <div class="control-panel">
+    <h3>Export Frame</h3>
+    <div class="sub">Unduh tampilan HP saat ini sebagai gambar PNG rasio 9:16 (1080x1920)</div>
+    <button class="reset-btn" id="exportFrameBtn">Export Frame (PNG 1080x1920)</button>
+  </div>
+
 `;

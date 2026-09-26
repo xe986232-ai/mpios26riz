@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import html2canvas from 'html2canvas';
 import { STAGE_MARKUP, PANELS_MARKUP } from './markup';
 
 export default function App() {
@@ -515,6 +516,58 @@ export default function App() {
       playPauseIconGroup.classList.add('bounce');
       if (isPlaying) startTick();
       else stopTick();
+    });
+
+    // ==== Export Frame: capture tampilan HP saat ini jadi PNG rasio 9:16 (1080x1920) ====
+    const exportFrameBtn = $<HTMLButtonElement>('exportFrameBtn');
+    const EXPORT_W = 1080;
+    const EXPORT_H = 1920;
+    on(exportFrameBtn, 'click', async (e: Event) => {
+      e.stopPropagation();
+      const originalLabel = exportFrameBtn.textContent || 'Export Frame (PNG 1080x1920)';
+      exportFrameBtn.disabled = true;
+      exportFrameBtn.textContent = 'Membuat gambar...';
+      try {
+        const rect = stage.getBoundingClientRect();
+        // Render stage pada skala yang membuat tingginya pas 1920px, biar hasil tajam & rasio aslinya (450:920) otomatis kebagi rata di dalam kanvas 1080x1920.
+        const scale = EXPORT_H / rect.height;
+        const captured = await html2canvas(stage, {
+          backgroundColor: null,
+          useCORS: true,
+          scale,
+        });
+
+        const out = document.createElement('canvas');
+        out.width = EXPORT_W;
+        out.height = EXPORT_H;
+        const ctx = out.getContext('2d');
+        if (!ctx) throw new Error('Canvas context tidak tersedia');
+        ctx.fillStyle = '#1b1b1f';
+        ctx.fillRect(0, 0, EXPORT_W, EXPORT_H);
+
+        // Fit "contain": skalakan lagi kalau ternyata lebih lebar/tinggi dari kanvas target, lalu taruh di tengah.
+        const fitScale = Math.min(EXPORT_W / captured.width, EXPORT_H / captured.height, 1);
+        const drawW = captured.width * fitScale;
+        const drawH = captured.height * fitScale;
+        const dx = Math.round((EXPORT_W - drawW) / 2);
+        const dy = Math.round((EXPORT_H - drawH) / 2);
+        ctx.drawImage(captured, dx, dy, drawW, drawH);
+
+        const blob: Blob | null = await new Promise((resolve) => out.toBlob(resolve, 'image/png'));
+        if (!blob) throw new Error('Gagal membuat PNG');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'control-center-frame-1080x1920.png';
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('Export frame gagal:', err);
+        alert('Gagal export gambar. Coba lagi.');
+      } finally {
+        exportFrameBtn.disabled = false;
+        exportFrameBtn.textContent = originalLabel;
+      }
     });
 
     applyCardStyle();
