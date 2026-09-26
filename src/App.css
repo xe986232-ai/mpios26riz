@@ -29,8 +29,15 @@
     background: rgba(255,255,255,.06); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
     overflow: hidden;
   }
-  .audio-waveform-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .audio-waveform-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; }
   .audio-canvas-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .audio-play-pause-btn {
+    width: 28px; height: 28px; border-radius: 50%; border: none; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,.18); color: #f2f2f7; cursor: pointer;
+  }
+  .audio-play-pause-btn:active { background: rgba(255,255,255,.3); }
+  .audio-play-pause-btn svg { display: block; }
   .audio-upload-btn {
     padding: 12px 22px; border-radius: 12px; border: none;
     background: rgba(255,255,255,.1); color: #f2f2f7; font-size: 13px; font-weight: 600; cursor: pointer;

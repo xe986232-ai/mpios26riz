@@ -641,7 +641,7 @@ export default function App() {
       else stopTick();
     });
 
-    // ==== Audio Canvas: upload file audio + render waveform-nya ====
+    // ==== Audio Canvas: upload file audio, render waveform, preview play/pause ====
     const audioWaveformCanvas = $<HTMLCanvasElement>('audioWaveformCanvas');
     const audioCanvasEmpty = $('audioCanvasEmpty');
     const audioCanvasInfo = $('audioCanvasInfo');
@@ -650,16 +650,45 @@ export default function App() {
     const audioReplaceBtn = $<HTMLButtonElement>('audioReplaceBtn');
     const audioFileNameEl = $('audioFileName');
     const audioFileDurationEl = $('audioFileDuration');
+    const audioPreviewEl = $<HTMLAudioElement>('audioPreviewEl');
+    const audioPlayPauseBtn = $<HTMLButtonElement>('audioPlayPauseBtn');
+    const audioPlayIcon = $('audioPlayIcon');
+    const audioPauseIcon = $('audioPauseIcon');
 
     // Disimpan di closure biar bisa dipakai fitur lain nanti (mis. sinkron ke Export Video)
     let loadedAudioBuffer: AudioBuffer | null = null;
+    let waveformPeaks: Array<{ min: number; max: number }> | null = null; // cache biar nggak dihitung ulang tiap frame playhead
+    let audioObjectUrl: string | null = null;
+    let playheadRaf: number | null = null;
 
     function fmtAudioTime(sec: number) {
       sec = Math.max(0, Math.round(sec));
       return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
     }
 
-    function drawWaveform(buffer: AudioBuffer) {
+    // Hitung min/max per kolom pixel sekali aja saat file baru di-load / kanvas di-resize.
+    function computeWaveformPeaks(buffer: AudioBuffer, width: number) {
+      const data = buffer.getChannelData(0); // channel pertama cukup buat preview visual
+      const w = Math.max(1, Math.round(width));
+      const samplesPerPixel = Math.max(1, Math.floor(data.length / w));
+      const peaks: Array<{ min: number; max: number }> = [];
+      for (let x = 0; x < w; x++) {
+        const start = x * samplesPerPixel;
+        let min = 1;
+        let max = -1;
+        for (let i = 0; i < samplesPerPixel; i++) {
+          const v = data[start + i] || 0;
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
+        peaks.push({ min, max });
+      }
+      return peaks;
+    }
+
+    // Gambar ulang dari cache peaks (murah, aman dipanggil tiap frame buat playhead) + garis posisi putar.
+    function renderWaveformCanvas(playheadRatio?: number) {
+      if (!waveformPeaks) return;
       const dpr = window.devicePixelRatio || 1;
       const rect = audioWaveformCanvas.getBoundingClientRect();
       audioWaveformCanvas.width = Math.max(1, Math.round(rect.width * dpr));
@@ -671,23 +700,47 @@ export default function App() {
       const h = rect.height;
       ctx.clearRect(0, 0, w, h);
 
-      const data = buffer.getChannelData(0); // channel pertama cukup buat preview visual
-      const samplesPerPixel = Math.max(1, Math.floor(data.length / w));
       const mid = h / 2;
-      ctx.fillStyle = '#0a84ff';
-      for (let x = 0; x < w; x++) {
-        const start = x * samplesPerPixel;
-        let min = 1;
-        let max = -1;
-        for (let i = 0; i < samplesPerPixel; i++) {
-          const v = data[start + i] || 0;
-          if (v < min) min = v;
-          if (v > max) max = v;
-        }
+      const playedUpTo = playheadRatio !== undefined ? playheadRatio * w : -1;
+      for (let x = 0; x < waveformPeaks.length; x++) {
+        const { min, max } = waveformPeaks[x];
         const yTop = mid + min * mid;
         const barH = Math.max(1, (max - min) * mid);
+        ctx.fillStyle = x <= playedUpTo ? '#fff' : '#0a84ff';
         ctx.fillRect(x, yTop, 1, barH);
       }
+      if (playheadRatio !== undefined) {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(Math.min(w - 1.5, playedUpTo), 0, 1.5, h);
+      }
+    }
+
+    function drawWaveform(buffer: AudioBuffer) {
+      const rect = audioWaveformCanvas.getBoundingClientRect();
+      waveformPeaks = computeWaveformPeaks(buffer, rect.width);
+      renderWaveformCanvas(0);
+    }
+
+    function setPlayIconState(isPlayingAudio: boolean) {
+      audioPlayIcon.style.display = isPlayingAudio ? 'none' : 'block';
+      audioPauseIcon.style.display = isPlayingAudio ? 'block' : 'none';
+    }
+
+    function stopPlayheadLoop() {
+      if (playheadRaf !== null) {
+        cancelAnimationFrame(playheadRaf);
+        playheadRaf = null;
+      }
+    }
+
+    function startPlayheadLoop() {
+      stopPlayheadLoop();
+      const tick = () => {
+        const dur = audioPreviewEl.duration || 0;
+        renderWaveformCanvas(dur > 0 ? audioPreviewEl.currentTime / dur : 0);
+        playheadRaf = requestAnimationFrame(tick);
+      };
+      playheadRaf = requestAnimationFrame(tick);
     }
 
     async function handleAudioFile(file: File) {
@@ -698,6 +751,14 @@ export default function App() {
         const decoded = await decodeCtx.decodeAudioData(arrayBuffer);
         loadedAudioBuffer = decoded;
         void decodeCtx.close();
+
+        // Sumber pemutaran preview: <audio> biasa via object URL (lebih ringan daripada re-decode ke Web Audio API tiap play)
+        if (audioObjectUrl) URL.revokeObjectURL(audioObjectUrl);
+        audioObjectUrl = URL.createObjectURL(file);
+        audioPreviewEl.pause();
+        audioPreviewEl.src = audioObjectUrl;
+        setPlayIconState(false);
+        stopPlayheadLoop();
 
         audioCanvasEmpty.style.display = 'none';
         audioWaveformCanvas.style.display = 'block';
@@ -724,11 +785,47 @@ export default function App() {
       if (file) void handleAudioFile(file);
       audioUploadInput.value = '';
     });
+
+    on(audioPlayPauseBtn, 'click', (e: Event) => {
+      e.stopPropagation();
+      if (!loadedAudioBuffer) return;
+      if (audioPreviewEl.paused) void audioPreviewEl.play();
+      else audioPreviewEl.pause();
+    });
+    on(audioPreviewEl, 'play', () => {
+      setPlayIconState(true);
+      startPlayheadLoop();
+    });
+    on(audioPreviewEl, 'pause', () => {
+      setPlayIconState(false);
+      stopPlayheadLoop();
+    });
+    on(audioPreviewEl, 'ended', () => {
+      setPlayIconState(false);
+      stopPlayheadLoop();
+      renderWaveformCanvas(0);
+    });
+    // Klik di atas waveform buat seek langsung ke posisi itu
+    on(audioWaveformCanvas, 'click', (e: Event) => {
+      e.stopPropagation();
+      if (!loadedAudioBuffer) return;
+      const me = e as MouseEvent;
+      const rect = audioWaveformCanvas.getBoundingClientRect();
+      const ratio = Math.min(1, Math.max(0, (me.clientX - rect.left) / rect.width));
+      const dur = audioPreviewEl.duration || loadedAudioBuffer.duration;
+      audioPreviewEl.currentTime = ratio * dur;
+      renderWaveformCanvas(ratio);
+    });
+
     const handleAudioCanvasResize = () => {
       if (loadedAudioBuffer) drawWaveform(loadedAudioBuffer);
     };
     window.addEventListener('resize', handleAudioCanvasResize);
     cleanupFns.push(() => window.removeEventListener('resize', handleAudioCanvasResize));
+    cleanupFns.push(() => {
+      stopPlayheadLoop();
+      if (audioObjectUrl) URL.revokeObjectURL(audioObjectUrl);
+    });
 
     // ==== Export Frame & Export Video: capture KANVAS 9:16 (.stage-frame) apa adanya ====
     // Patokan export sekarang .stage-frame (kanvas yang tampak di layar, sudah terkunci rasio 9:16 lewat CSS),
@@ -1031,12 +1128,22 @@ export default function App() {
           <div className="stage" id="stage" dangerouslySetInnerHTML={{ __html: STAGE_MARKUP }} />
         </div>
         <div className="audio-canvas-wrap" id="audioCanvasWrap">
+          <audio id="audioPreviewEl" preload="none" style={{ display: 'none' }} />
           <canvas id="audioWaveformCanvas" className="audio-waveform-canvas" style={{ display: 'none' }} />
           <div className="audio-canvas-empty" id="audioCanvasEmpty">
             <input type="file" accept="audio/*" id="audioUploadInput" style={{ display: 'none' }} />
             <button type="button" className="audio-upload-btn" id="audioUploadBtn">Upload Audio</button>
           </div>
           <div className="audio-canvas-info" id="audioCanvasInfo" style={{ display: 'none' }}>
+            <button type="button" className="audio-play-pause-btn" id="audioPlayPauseBtn" aria-label="Play/Pause">
+              <svg id="audioPlayIcon" width="12" height="12" viewBox="0 0 14 14" fill="none">
+                <path d="M3 1.5L12 7L3 12.5V1.5Z" fill="currentColor" />
+              </svg>
+              <svg id="audioPauseIcon" width="12" height="12" viewBox="0 0 14 14" fill="none" style={{ display: 'none' }}>
+                <rect x="2" y="1.5" width="3.5" height="11" rx="1" fill="currentColor" />
+                <rect x="8.5" y="1.5" width="3.5" height="11" rx="1" fill="currentColor" />
+              </svg>
+            </button>
             <span id="audioFileName"></span>
             <span id="audioFileDuration"></span>
             <button type="button" className="audio-replace-btn" id="audioReplaceBtn">Ganti</button>
