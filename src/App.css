@@ -3,6 +3,17 @@
      (path /__l5e/... tidak resolve dan tidak dipakai di elemen manapun).
      Tampilan tetap sama karena fallback -apple-system/BlinkMacSystemFont/"SF Pro Text" di bawah. */
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  *, *::before, *::after {
+    -webkit-tap-highlight-color: transparent; /* hilangkan highlight biru/abu bawaan browser mobile saat tap */
+  }
+  button, [role="button"], a, svg *, .cc-hit {
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+  }
+  button:focus, button:focus-visible,
+  svg rect:focus, svg g:focus, svg *:focus {
+    outline: none;
+  }
   html, body { height: 100%; }
   body {
     min-height: 100vh; display: flex; align-items: center; justify-content: flex-start;
