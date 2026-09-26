@@ -12,16 +12,19 @@
   .page-wrap { display: flex; align-items: center; justify-content: center; gap: 32px; width: 100%; min-height: 100vh; padding: 24px; }
   .stage-col { flex-shrink: 0; margin-left: 0; }
   /* Kanvas luar rasio 9:16 — pembungkus tampilan, menggantikan "frame HP" yang sekarang disembunyikan (lihat rect.phone-frame di bawah). */
+  /* Kanvas luar dikunci di rasio 9:16 (setara 1080x1920), berapapun rasio konten di dalamnya. */
   .stage-frame {
-    position: relative; width: min(450px, 92vw); aspect-ratio: 450 / 920;
+    position: relative; width: min(450px, 92vw); aspect-ratio: 9 / 16;
     display: flex; align-items: center; justify-content: center; overflow: hidden;
     border-radius: 56px;
   }
-  /* Kanvas luar sekarang pakai rasio asli desain (450:920), sama persis dengan .stage,
-     jadi tidak ada lagi overflow yang kepotong di atas/bawah maupun di sudut-sudut
-     (yang sebelumnya kelihatan seperti "kepotong vertical" di kiri-kanan akibat
-     border-radius kanvas memotong konten yang overflow). */
-  .stage { position: relative; width: 100%; height: auto; aspect-ratio: 450 / 920; }
+  /* .stage tetap punya rasio asli desain (450:920), tapi sekarang dia yang MENYESUAIKAN
+     ke dalam kanvas 9:16 di atas (mode "contain"): tinggi mengikuti 100% tinggi kanvas,
+     lebar dihitung otomatis dari aspect-ratio. Karena rasio desain (450:920 ≈ 9:18.4)
+     "lebih tinggi/ramping" daripada kanvas (9:16), hasilnya konten pas penuh secara
+     tinggi dan ada sedikit ruang kosong di kiri-kanan — bukan kepotong. Semua posisi
+     persen di dalamnya (.player, dll) tetap relatif ke .stage jadi tidak perlu diubah. */
+  .stage { position: relative; width: auto; height: 100%; aspect-ratio: 450 / 920; }
   .cc { position: absolute; inset: 0; }
   .cc svg { width: 100%; height: 100%; display: block; }
   /* Player menutupi area layar HP: x=24..426, y=23..897 dari canvas 450x920 */
