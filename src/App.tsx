@@ -590,9 +590,14 @@ export default function App() {
       else stopTick();
     });
 
-    // ==== Export Frame: capture tampilan HP saat ini jadi PNG rasio 9:16 (1080x1920) ====
+    // ==== Export Frame: capture KANVAS 9:16 (.stage-frame) apa adanya jadi PNG 1080x1920 ====
+    // Patokan export sekarang .stage-frame (kanvas yang tampak di layar, sudah terkunci rasio 9:16 lewat CSS),
+    // BUKAN lagi area layar HP di dalam SVG (yang rasionya ~402:874, beda dari kanvas). Jadi apa yang kelihatan
+    // di kanvas — termasuk ruang kosong letterbox kiri-kanan kalau ada — itulah yang ikut ke-export, 1:1.
     const exportFrameBtn = $<HTMLButtonElement>('exportFrameBtn');
-    const EXPORT_H = 1920; // tinggi target hasil export (lebar dihitung otomatis dari rasio layar HP)
+    const EXPORT_H = 1920; // tinggi target hasil export
+    const EXPORT_W = 1080; // lebar target hasil export — dikunci 9:16, sama seperti .stage-frame
+    const stageFrame = stage.parentElement as HTMLElement; // .stage-frame — elemen kanvas yang jadi acuan crop export
     on(exportFrameBtn, 'click', async (e: Event) => {
       e.stopPropagation();
       const originalLabel = exportFrameBtn.textContent || 'Export Frame (PNG 1080x1920)';
@@ -600,8 +605,9 @@ export default function App() {
       exportFrameBtn.textContent = 'Membuat gambar...';
       let cloneWrap: HTMLDivElement | null = null;
       try {
-        const rect = stage.getBoundingClientRect();
-        // Render stage pada skala yang membuat tingginya pas 1920px, biar hasil tajam & rasio aslinya (450:920) otomatis kebagi rata di dalam kanvas 1080x1920.
+        const rect = stageFrame.getBoundingClientRect();
+        // Render pada skala yang membuat tinggi kanvas pas 1920px; karena .stage-frame terkunci rasio 9:16
+        // di CSS, lebarnya otomatis ikut pas ~1080px — hasil export jadi identik dengan kanvas di layar.
         const scale = EXPORT_H / rect.height;
 
         // ==== 1. Bekukan frame video wallpaper saat ini + siapkan lapisan blur pengganti backdrop-filter ====
@@ -627,21 +633,24 @@ export default function App() {
           }
         }
 
-        // ==== 2. Clone stage (biar modifikasi di bawah ini tidak mengganggu tampilan asli & video yang lagi jalan) ====
+        // ==== 2. Clone seluruh .stage-frame (kanvas 9:16 utuh, biar modifikasi di bawah ini tidak mengganggu
+        // tampilan asli & video yang lagi jalan). stageClone tetap merujuk ke elemen .stage di dalamnya,
+        // supaya semua posisi persen (video, backdrop, dll — relatif ke viewBox 450x920) tetap benar. ====
         cloneWrap = document.createElement('div');
         cloneWrap.className = 'export-frame-clone';
         cloneWrap.style.cssText =
           'position:fixed;left:-99999px;top:0;width:' + rect.width + 'px;height:' + rect.height + 'px;pointer-events:none;';
 
-        const stageClone = stage.cloneNode(true) as HTMLElement;
-        stageClone.removeAttribute('id');
+        const frameClone = stageFrame.cloneNode(true) as HTMLElement;
+        const stageClone = (frameClone.querySelector<HTMLElement>('#stage') ?? frameClone) as HTMLElement;
+        stageClone.removeAttribute('id'); // hindari id "stage" duplikat selagi clone ini nempel sementara di DOM
         // Matikan blur bawaan CSS punya clone ini: backdrop-filter tidak pernah kebawa html2canvas,
         // tapi warna hitam datarnya (rgba tanpa blur) tetap bisa ke-render & bikin dobel gelap
         // di atas lapisan pengganti yang kita suntikkan manual di bawah.
         const styleOverride = document.createElement('style');
         styleOverride.textContent = '.export-frame-clone .stage::after { display: none !important; }';
         cloneWrap.appendChild(styleOverride);
-        cloneWrap.appendChild(stageClone);
+        cloneWrap.appendChild(frameClone);
         document.body.appendChild(cloneWrap);
 
         // Ganti <video> jadi <img> beku (frame saat ini)
@@ -696,39 +705,30 @@ export default function App() {
           )
         );
 
-        // ==== 3. Screenshot clone yang sudah "dibekukan" (video jadi gambar, blur sudah di-bake manual) ====
-        const captured = await html2canvas(stageClone, {
+        // ==== 3. Screenshot clone KANVAS PENUH (frameClone, 9:16) yang sudah "dibekukan"
+        // (video jadi gambar, blur sudah di-bake manual). Border-radius + overflow:hidden milik
+        // .stage-frame ikut ter-capture apa adanya, jadi sudut yang membulat otomatis transparan. ====
+        const captured = await html2canvas(frameClone, {
           backgroundColor: null,
           useCORS: true,
           scale,
         });
 
-        // ==== 4. Crop: buang frame/bezel HP, sisain area layarnya aja (wx,wy,ww,wh — persis kotak yang sama
-        // dipakai wallpaper/blur di atas). Stage full = viewBox 450x920, jadi posisinya tinggal dihitung
-        // proporsional terhadap ukuran hasil capture (yang sudah proporsional 450:920 juga).
-        const cropX = (wx / 450) * captured.width;
-        const cropY = (wy / 920) * captured.height;
-        const cropW = (ww / 450) * captured.width;
-        const cropH = (wh / 920) * captured.height;
-
-        // Output disamakan rasionya dengan area layar itu sendiri (~402:874), tinggi target tetap ~1920px
-        // biar tajam, tanpa nambah background/letterbox — sudut yang membulat otomatis transparan.
-        const outH = EXPORT_H;
-        const outW = Math.round(outH * (ww / wh));
-
+        // ==== 4. Output dikunci persis 1080x1920 (9:16) — SAMA PERSIS dengan apa yang tampak di kanvas,
+        // tanpa crop tambahan ke area layar HP lagi. Kanvas-lah yang jadi patokan, bukan konten di dalamnya. ====
         const out = document.createElement('canvas');
-        out.width = outW;
-        out.height = outH;
+        out.width = EXPORT_W;
+        out.height = EXPORT_H;
         const ctx = out.getContext('2d');
         if (!ctx) throw new Error('Canvas context tidak tersedia');
-        ctx.drawImage(captured, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
+        ctx.drawImage(captured, 0, 0, captured.width, captured.height, 0, 0, EXPORT_W, EXPORT_H);
 
         const blob: Blob | null = await new Promise((resolve) => out.toBlob(resolve, 'image/png'));
         if (!blob) throw new Error('Gagal membuat PNG');
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `control-center-frame-${outW}x${outH}.png`;
+        a.download = `control-center-frame-${EXPORT_W}x${EXPORT_H}.png`;
         a.click();
         URL.revokeObjectURL(url);
       } catch (err) {
