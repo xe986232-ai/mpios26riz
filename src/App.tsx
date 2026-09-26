@@ -30,6 +30,15 @@ export default function App() {
       cleanupFns.push(() => el.removeEventListener(type, handler as EventListener));
     };
 
+    // ==== Toggle panel Customize (collapse/expand biar hemat tempat) ====
+    const customizeToggle = $('customizeToggle');
+    const panelStack = $('panelStack');
+    on(customizeToggle, 'click', (e: Event) => {
+      e.stopPropagation();
+      const nowCollapsed = panelStack.classList.toggle('collapsed');
+      customizeToggle.classList.toggle('open', !nowCollapsed);
+    });
+
     const openHandler = (e: Event) => {
       e.stopPropagation();
       stage.classList.add('open');
@@ -47,15 +56,16 @@ export default function App() {
 
     // ==== Customize panel: rounded / smoothing / panjang / lebar / opacity kartu music player ====
     const DEFAULTS = {
-      radius: 32,
-      smoothing: 60,
+      radius: 125,
+      smoothing: 100,
       height: 78,
       width: 89,
-      opacity: 8,
-      rotate: 0,
-      length: 300,
-      coverRadius: 6,
-      coverSmooth: 0,
+      opacity: 20,
+      rotate: 177.6,
+      length: 345,
+      coverRadius: 70,
+      coverSmooth: 100,
+      ccOpacity: 20,
     };
 
     const ctrlRadius = $<HTMLInputElement>('ctrlRadius');
@@ -270,7 +280,7 @@ export default function App() {
     on(ctrlCcOpacity, 'click', (e: Event) => e.stopPropagation());
     on(resetCcBtn, 'click', (e: Event) => {
       e.stopPropagation();
-      ctrlCcOpacity.value = '8';
+      ctrlCcOpacity.value = String(DEFAULTS.ccOpacity);
       applyCcOpacity();
     });
 
@@ -525,7 +535,13 @@ export default function App() {
   return (
     <div className="page-wrap" ref={rootRef}>
       <div className="stage stage-col" id="stage" dangerouslySetInnerHTML={{ __html: STAGE_MARKUP }} />
-      <div className="panel-stack" dangerouslySetInnerHTML={{ __html: PANELS_MARKUP }} />
+      <div className="customize-wrap">
+        <button type="button" className="customize-toggle" id="customizeToggle">
+          <span>Customize</span>
+          <span className="chevron" id="customizeChevron">⌄</span>
+        </button>
+        <div className="panel-stack collapsed" id="panelStack" dangerouslySetInnerHTML={{ __html: PANELS_MARKUP }} />
+      </div>
     </div>
   );
 }

@@ -210,23 +210,23 @@ export const PANELS_MARKUP = `
     </div>
 
     <div class="row">
-      <div class="row-head"><label for="ctrlCoverRadius">Rounded Cover</label><span class="val" id="valCoverRadius">6px</span></div>
-      <input type="range" id="ctrlCoverRadius" min="0" max="141" value="6">
+      <div class="row-head"><label for="ctrlCoverRadius">Rounded Cover</label><span class="val" id="valCoverRadius">70px</span></div>
+      <input type="range" id="ctrlCoverRadius" min="0" max="141" value="70">
     </div>
 
     <div class="row">
-      <div class="row-head"><label for="ctrlCoverSmooth">Corner Smoothing Cover</label><span class="val" id="valCoverSmooth">0%</span></div>
-      <input type="range" id="ctrlCoverSmooth" min="0" max="100" value="0">
+      <div class="row-head"><label for="ctrlCoverSmooth">Corner Smoothing Cover</label><span class="val" id="valCoverSmooth">100%</span></div>
+      <input type="range" id="ctrlCoverSmooth" min="0" max="100" value="100">
     </div>
 
     <div class="row">
-      <div class="row-head"><label for="ctrlRadius">Rounded</label><span class="val" id="valRadius">32px</span></div>
-      <input type="range" id="ctrlRadius" min="0" max="150" value="32">
+      <div class="row-head"><label for="ctrlRadius">Rounded</label><span class="val" id="valRadius">125px</span></div>
+      <input type="range" id="ctrlRadius" min="0" max="150" value="125">
     </div>
 
     <div class="row">
-      <div class="row-head"><label for="ctrlSmooth">Corner Smoothing</label><span class="val" id="valSmooth">60%</span></div>
-      <input type="range" id="ctrlSmooth" min="0" max="100" value="60">
+      <div class="row-head"><label for="ctrlSmooth">Corner Smoothing</label><span class="val" id="valSmooth">100%</span></div>
+      <input type="range" id="ctrlSmooth" min="0" max="100" value="100">
     </div>
 
     <div class="row">
@@ -240,12 +240,12 @@ export const PANELS_MARKUP = `
     </div>
 
     <div class="row">
-      <div class="row-head"><label for="ctrlOpacity">Opacity</label><span class="val" id="valOpacity">8%</span></div>
-      <input type="range" id="ctrlOpacity" min="0" max="100" value="8">
+      <div class="row-head"><label for="ctrlOpacity">Opacity</label><span class="val" id="valOpacity">20%</span></div>
+      <input type="range" id="ctrlOpacity" min="0" max="100" value="20">
     </div>
 
     <div class="row">
-      <div class="row-head"><label>Rotate Garis Tepi</label><span class="val" id="valRotate">0°</span></div>
+      <div class="row-head"><label>Rotate Garis Tepi</label><span class="val" id="valRotate">178°</span></div>
       <div class="knob-wrap">
         <div class="knob" id="knobRotate">
           <div class="knob-dot"></div>
@@ -255,8 +255,8 @@ export const PANELS_MARKUP = `
     </div>
 
     <div class="row">
-      <div class="row-head"><label for="ctrlLength">Panjang Highlight</label><span class="val" id="valLength">300</span></div>
-      <input type="range" id="ctrlLength" min="60" max="600" value="300">
+      <div class="row-head"><label for="ctrlLength">Panjang Highlight</label><span class="val" id="valLength">345</span></div>
+      <input type="range" id="ctrlLength" min="60" max="600" value="345">
     </div>
 
     <button class="reset-btn" id="resetBtn">Reset ke default</button>
@@ -266,8 +266,8 @@ export const PANELS_MARKUP = `
     <h3>Customize Control Center</h3>
     <div class="sub">Atur opacity semua kartu Control Center</div>
     <div class="row">
-      <div class="row-head"><label for="ctrlCcOpacity">Opacity Semua Card</label><span class="val" id="valCcOpacity">8%</span></div>
-      <input type="range" id="ctrlCcOpacity" min="0" max="100" value="8">
+      <div class="row-head"><label for="ctrlCcOpacity">Opacity Semua Card</label><span class="val" id="valCcOpacity">20%</span></div>
+      <input type="range" id="ctrlCcOpacity" min="0" max="100" value="20">
     </div>
     <button class="reset-btn" id="resetCcBtn">Reset ke default</button>
   </div>
