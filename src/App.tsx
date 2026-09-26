@@ -684,7 +684,9 @@ export default function App() {
         // tapi warna hitam datarnya (rgba tanpa blur) tetap bisa ke-render & bikin dobel gelap
         // di atas lapisan pengganti yang kita suntikkan manual di bawah.
         const styleOverride = document.createElement('style');
-        styleOverride.textContent = '.export-frame-clone .stage::after { display: none !important; }';
+        styleOverride.textContent =
+          '.export-frame-clone .stage::after { display: none !important; }' +
+          '.export-frame-clone .stage-frame { border-radius: 0 !important; }';
         cloneWrap.appendChild(styleOverride);
         cloneWrap.appendChild(frameClone);
         document.body.appendChild(cloneWrap);
