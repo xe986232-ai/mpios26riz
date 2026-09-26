@@ -1168,12 +1168,15 @@ export default function App() {
     // pakai mp4-muxer. Semua di browser, tanpa server/Playwright — hasilnya tetap akurat & konsisten
     // walau device lemot, karena kita yang mengontrol "waktu" tiap frame, bukan menunggu jam asli. ====
     const VIDEO_FPS = 30;
-    const MAX_EXPORT_DURATION_SEC = 60; // batas atas — nanti UI pemilihan durasi tinggal clamp ke sini
-    const DEFAULT_EXPORT_DURATION_SEC = 10; // sementara fixed; pemilihan durasi oleh user menyusul
+    const MAX_EXPORT_DURATION_SEC = 600; // batas atas keamanan (10 menit), bukan lagi patokan utama durasi
+    const FALLBACK_EXPORT_DURATION_SEC = 10; // dipakai HANYA kalau belum ada lagu yang di-upload sama sekali
 
     on(exportVideoBtn, 'click', async (e: Event) => {
       e.stopPropagation();
-      void exportVideo(DEFAULT_EXPORT_DURATION_SEC);
+      // Durasi export sekarang ikut durasi lagu yang di-upload (songDuration), bukan hardcode lagi.
+      // Kalau belum ada lagu yang di-upload (songDuration <= 0), fallback ke FALLBACK_EXPORT_DURATION_SEC.
+      const durationSec = songDuration > 0 ? songDuration : FALLBACK_EXPORT_DURATION_SEC;
+      void exportVideo(durationSec);
     });
 
     async function exportVideo(requestedDurationSec: number) {
