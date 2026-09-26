@@ -596,7 +596,6 @@ export default function App() {
     const widgetPauseIcon = $<HTMLElement>('widgetPauseIcon');
     const widgetPlayPauseHit = $('widgetPlayPauseHit');
     const widgetPlayPauseIconGroup = $('widgetPlayPauseIconGroup');
-    let isPlaying = false;
 
     // ==== Durasi lagu: waktu berjalan & sisa durasi ====
     const timeElapsed = $('timeElapsed');
@@ -636,35 +635,24 @@ export default function App() {
       widgetPlayPauseIconGroup.classList.remove('bounce');
     });
 
-    // Satu fungsi toggle dipakai bareng oleh tombol play/pause di Music Player
-    // dan tombol play/pause di kartu widget Control Center, biar state-nya selalu sinkron.
-    function togglePlayPause() {
-      isPlaying = !isPlaying;
-
-      playIcon.style.opacity = isPlaying ? '0' : '1';
-      pauseIcon.style.opacity = isPlaying ? '1' : '0';
+    // Ikon play/pause di Music Player & kartu widget sekarang cuma "cerminan" dari state
+    // audio asli (audioPreviewEl) — dipanggil dari event play/pause audio-nya, bukan dari klik langsung.
+    function reflectPlayingState(isPlayingNow: boolean) {
+      playIcon.style.opacity = isPlayingNow ? '0' : '1';
+      pauseIcon.style.opacity = isPlayingNow ? '1' : '0';
       playPauseIconGroup.classList.remove('bounce');
       void playPauseIconGroup.offsetWidth; // reflow biar animasi bisa diulang
       playPauseIconGroup.classList.add('bounce');
 
-      widgetPlayIcon.style.opacity = isPlaying ? '0' : '1';
-      widgetPauseIcon.style.opacity = isPlaying ? '1' : '0';
+      widgetPlayIcon.style.opacity = isPlayingNow ? '0' : '1';
+      widgetPauseIcon.style.opacity = isPlayingNow ? '1' : '0';
       widgetPlayPauseIconGroup.classList.remove('bounce');
       void widgetPlayPauseIconGroup.offsetWidth;
       widgetPlayPauseIconGroup.classList.add('bounce');
 
-      if (isPlaying) startTick();
+      if (isPlayingNow) startTick();
       else stopTick();
     }
-
-    on(playPauseHit, 'click', (e: Event) => {
-      e.stopPropagation();
-      togglePlayPause();
-    });
-    on(widgetPlayPauseHit, 'click', (e: Event) => {
-      e.stopPropagation(); // jangan sampai membuka Music Player, cuma toggle play/pause
-      togglePlayPause();
-    });
 
     // ==== Audio Canvas: upload file audio, render waveform, preview play/pause ====
     const audioWaveformCanvas = $<HTMLCanvasElement>('audioWaveformCanvas');
@@ -811,18 +799,35 @@ export default function App() {
       audioUploadInput.value = '';
     });
 
-    on(audioPlayPauseBtn, 'click', (e: Event) => {
-      e.stopPropagation();
-      if (!loadedAudioBuffer) return;
+    // Satu fungsi play/pause buat audio asli — dipakai bareng oleh tombol di Music Player,
+    // tombol di kartu widget Control Center, DAN tombol kecil di canvas audio, biar semuanya
+    // ngontrol pemutaran yang sama (bukan cuma animasi kosmetik lagi).
+    function requestTogglePlayback() {
+      if (!loadedAudioBuffer) return; // belum ada audio yang di-upload, gak ada yang bisa di-play
       if (audioPreviewEl.paused) void audioPreviewEl.play();
       else audioPreviewEl.pause();
+    }
+
+    on(audioPlayPauseBtn, 'click', (e: Event) => {
+      e.stopPropagation();
+      requestTogglePlayback();
+    });
+    on(playPauseHit, 'click', (e: Event) => {
+      e.stopPropagation();
+      requestTogglePlayback();
+    });
+    on(widgetPlayPauseHit, 'click', (e: Event) => {
+      e.stopPropagation(); // jangan sampai membuka Music Player, cuma toggle play/pause
+      requestTogglePlayback();
     });
     on(audioPreviewEl, 'play', () => {
       setPlayIconState(true);
+      reflectPlayingState(true);
       startPlayheadLoop();
     });
     on(audioPreviewEl, 'pause', () => {
       setPlayIconState(false);
+      reflectPlayingState(false);
       stopPlayheadLoop();
     });
     on(audioPreviewEl, 'ended', () => {
@@ -1054,7 +1059,7 @@ export default function App() {
 
       // Simpan state elapsed/play asli supaya bisa dikembalikan setelah render selesai
       const originalElapsed = elapsed;
-      const wasPlaying = isPlaying;
+      const wasPlaying = !audioPreviewEl.paused;
       stopTick();
 
       const target = new ArrayBufferTarget();
