@@ -155,7 +155,7 @@ export default function App() {
       coverSmooth: 100,
       ccOpacity: 20,
       stageZoom: 112,
-      stageOffsetY: 0,
+      stageOffsetY: -3,
     };
 
     const ctrlRadius = $<HTMLInputElement>('ctrlRadius');

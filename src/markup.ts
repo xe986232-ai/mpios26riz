@@ -269,8 +269,8 @@ export const PANELS_MARKUP = `
     </div>
 
     <div class="row">
-      <div class="row-head"><label for="ctrlStageOffsetY">Posisi Vertikal</label><span class="val" id="valStageOffsetY">0%</span></div>
-      <input type="range" id="ctrlStageOffsetY" min="-50" max="50" step="1" value="0">
+      <div class="row-head"><label for="ctrlStageOffsetY">Posisi Vertikal</label><span class="val" id="valStageOffsetY">-3%</span></div>
+      <input type="range" id="ctrlStageOffsetY" min="-50" max="50" step="1" value="-3">
     </div>
 
     <button class="reset-btn" id="resetStageBtn">Reset ke default</button>
