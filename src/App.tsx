@@ -597,36 +597,42 @@ export default function App() {
     const widgetPlayPauseHit = $('widgetPlayPauseHit');
     const widgetPlayPauseIconGroup = $('widgetPlayPauseIconGroup');
 
-    // ==== Durasi lagu: waktu berjalan & sisa durasi ====
+    // ==== Durasi lagu: waktu berjalan & sisa durasi — mengikuti audio asli yang di-upload ====
     const timeElapsed = $('timeElapsed');
     const timeRemaining = $('timeRemaining');
     const progressFill = $<SVGRectElement>('progressFill');
-    const SONG_TOTAL = 225; // total durasi 3:45
-    let elapsed = 113; // posisi awal 1:53 (sesuai progress di desain)
-    let tickTimer: ReturnType<typeof setInterval> | null = null;
+    const progressTrack = $<SVGRectElement>('progressTrack');
+    const progressHit = $<SVGRectElement>('progressHit');
+    const PROGRESS_BAR_WIDTH = 282; // lebar track dalam unit SVG (bukan px layar)
+    let songDuration = 0; // durasi total, ikut durasi file audio yang di-upload (0 = belum ada audio)
+    let elapsed = 0; // posisi berjalan, dalam detik
+    // tickingEnabled dipakai buat "mematikan sementara" sinkronisasi ke audio asli
+    // waktu proses export video (di situ elapsed di-advance manual, frame demi frame).
+    let tickingEnabled = true;
 
     function fmtTime(sec: number) {
       sec = Math.max(0, Math.round(sec));
       return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
     }
     function renderDuration() {
-      timeElapsed.textContent = fmtTime(elapsed);
-      timeRemaining.textContent = '-' + fmtTime(SONG_TOTAL - elapsed);
-      progressFill.setAttribute('width', ((282 * elapsed) / SONG_TOTAL).toFixed(2));
+      const dur = Math.max(0, songDuration);
+      const pos = Math.min(Math.max(0, elapsed), dur);
+      timeElapsed.textContent = fmtTime(pos);
+      timeRemaining.textContent = '-' + fmtTime(dur - pos);
+      progressFill.setAttribute('width', dur > 0 ? ((PROGRESS_BAR_WIDTH * pos) / dur).toFixed(2) : '0');
+    }
+    // Dipanggil tiap kali durasi audio yang sebenarnya berubah/diketahui (metadata audio ke-load).
+    function updateSongDuration() {
+      const audioDur = audioPreviewEl.duration;
+      const validAudioDur = Number.isFinite(audioDur) && audioDur > 0 ? audioDur : 0;
+      songDuration = validAudioDur || (loadedAudioBuffer ? loadedAudioBuffer.duration : 0);
+      renderDuration();
     }
     function startTick() {
-      stopTick();
-      tickTimer = setInterval(() => {
-        elapsed = elapsed + 1;
-        if (elapsed > SONG_TOTAL) elapsed = 0;
-        renderDuration();
-      }, 1000);
+      tickingEnabled = true;
     }
     function stopTick() {
-      if (tickTimer) {
-        clearInterval(tickTimer);
-        tickTimer = null;
-      }
+      tickingEnabled = false;
     }
     on(playPauseIconGroup, 'animationend', () => {
       playPauseIconGroup.classList.remove('bounce');
@@ -751,6 +757,12 @@ export default function App() {
       const tick = () => {
         const dur = audioPreviewEl.duration || 0;
         renderWaveformCanvas(dur > 0 ? audioPreviewEl.currentTime / dur : 0);
+        // Sinkronkan progress bar & label durasi di Music Player ke posisi audio asli,
+        // tiap frame (lebih halus daripada event 'timeupdate' yang cuma ~4x/detik).
+        if (tickingEnabled) {
+          elapsed = audioPreviewEl.currentTime;
+          renderDuration();
+        }
         playheadRaf = requestAnimationFrame(tick);
       };
       playheadRaf = requestAnimationFrame(tick);
@@ -772,6 +784,12 @@ export default function App() {
         audioPreviewEl.src = audioObjectUrl;
         setPlayIconState(false);
         stopPlayheadLoop();
+
+        // Reset posisi & set durasi awal dari hasil decode (nanti disempurnakan lagi
+        // begitu metadata elemen <audio> asli ke-load lewat updateSongDuration()).
+        elapsed = 0;
+        songDuration = decoded.duration;
+        renderDuration();
 
         audioCanvasEmpty.style.display = 'none';
         audioWaveformCanvas.style.display = 'block';
@@ -834,6 +852,19 @@ export default function App() {
       setPlayIconState(false);
       stopPlayheadLoop();
       renderWaveformCanvas(0);
+      elapsed = songDuration;
+      renderDuration();
+    });
+    // Metadata (termasuk durasi asli) baru pasti akurat begitu browser selesai membacanya —
+    // di sinilah progress bar & label durasi Music Player disamakan ke durasi audio yang di-upload.
+    on(audioPreviewEl, 'loadedmetadata', updateSongDuration);
+    on(audioPreviewEl, 'durationchange', updateSongDuration);
+    // Jaga-jaga: event 'timeupdate' bawaan browser, buat kasus playhead loop belum jalan
+    // (misalnya seek terjadi tanpa play), progress bar tetap kesinkron.
+    on(audioPreviewEl, 'timeupdate', () => {
+      if (!tickingEnabled) return;
+      elapsed = audioPreviewEl.currentTime;
+      renderDuration();
     });
     // Klik di atas waveform buat seek langsung ke posisi itu
     on(audioWaveformCanvas, 'click', (e: Event) => {
@@ -844,8 +875,47 @@ export default function App() {
       const ratio = Math.min(1, Math.max(0, (me.clientX - rect.left) / rect.width));
       const dur = audioPreviewEl.duration || loadedAudioBuffer.duration;
       audioPreviewEl.currentTime = ratio * dur;
+      elapsed = ratio * dur;
+      renderDuration();
       renderWaveformCanvas(ratio);
     });
+
+    // ==== Progress bar Music Player: klik & drag kiri-kanan buat set posisi lagu ====
+    function seekRatioFromPointer(e: PointerEvent) {
+      const rect = progressTrack.getBoundingClientRect();
+      if (rect.width === 0) return 0;
+      return Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    }
+    function applyProgressSeek(ratio: number) {
+      if (songDuration <= 0) return; // belum ada audio yang di-upload
+      elapsed = ratio * songDuration;
+      renderDuration();
+      renderWaveformCanvas(ratio);
+      if (audioPreviewEl.readyState > 0) {
+        audioPreviewEl.currentTime = elapsed;
+      }
+    }
+    let draggingProgress = false;
+    on(progressHit, 'pointerdown', (e: PointerEvent) => {
+      e.stopPropagation();
+      if (songDuration <= 0) return;
+      draggingProgress = true;
+      progressHit.setPointerCapture(e.pointerId);
+      applyProgressSeek(seekRatioFromPointer(e));
+    });
+    on(progressHit, 'pointermove', (e: PointerEvent) => {
+      if (!draggingProgress) return;
+      e.stopPropagation();
+      applyProgressSeek(seekRatioFromPointer(e));
+    });
+    on(progressHit, 'pointerup', (e: PointerEvent) => {
+      draggingProgress = false;
+      e.stopPropagation();
+    });
+    on(progressHit, 'pointercancel', () => {
+      draggingProgress = false;
+    });
+    on(progressHit, 'click', (e: Event) => e.stopPropagation());
 
     const handleAudioCanvasResize = () => {
       if (loadedAudioBuffer) drawWaveform(loadedAudioBuffer);
@@ -1086,7 +1156,7 @@ export default function App() {
         for (let i = 0; i < totalFrames; i++) {
           // ==== 1. Advance state manual (deterministik) — elapsed timer & posisi video wallpaper ====
           elapsed = originalElapsed + i / VIDEO_FPS;
-          if (elapsed > SONG_TOTAL) elapsed -= SONG_TOTAL;
+          if (songDuration > 0 && elapsed > songDuration) elapsed -= songDuration;
           renderDuration();
 
           if (wallpaperVideoEl && wallpaperVideoEl.duration) {
@@ -1135,6 +1205,7 @@ export default function App() {
       }
     }
 
+    renderDuration();
     applyCardStyle();
     applyAlbumArtStyle();
     applyCcOpacity();

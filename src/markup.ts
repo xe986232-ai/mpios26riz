@@ -129,8 +129,8 @@ export const STAGE_MARKUP = `
 <image id="albumArtImage" x="27" y="27" width="282" height="282" clip-path="url(#albumArtClip)" preserveAspectRatio="xMidYMid slice" opacity="0" href="" xlink:href=""/>
 <text id="songTitle" x="27.5" y="358" fill="white" font-family="'SF Pro Display Black', sans-serif" font-size="16" font-weight="600" letter-spacing="0.1">Apple</text>
 <text id="songArtist" x="27.5" y="376" fill="white" fill-opacity="0.6" font-family="'SF Pro Display Black', sans-serif" font-size="13" font-weight="400" letter-spacing="0.1">Charli XCX</text>
-<text id="timeElapsed" x="27.5" y="419.3" fill="white" fill-opacity="0.8" font-family="'SF Pro Display Black', sans-serif" font-size="12" letter-spacing="0.2">1:53</text>
-<text id="timeRemaining" x="308.5" y="419.3" text-anchor="end" fill="white" fill-opacity="0.5" font-family="'SF Pro Display Black', sans-serif" font-size="12" letter-spacing="0.2">-1:52</text>
+<text id="timeElapsed" x="27.5" y="419.3" fill="white" fill-opacity="0.8" font-family="'SF Pro Display Black', sans-serif" font-size="12" letter-spacing="0.2">0:00</text>
+<text id="timeRemaining" x="308.5" y="419.3" text-anchor="end" fill="white" fill-opacity="0.5" font-family="'SF Pro Display Black', sans-serif" font-size="12" letter-spacing="0.2">-0:00</text>
 <g id="playPauseIconGroup">
 <g id="playIcon">
 <path d="M157.61 473.988C156.028 473.988 154.914 472.777 154.914 470.844V442.992C154.914 441.059 156.028 439.848 157.61 439.848C158.45 439.848 159.153 440.141 160.051 440.668L183.059 453.988C184.758 454.965 185.422 455.707 185.422 456.918C185.422 458.129 184.758 458.871 183.059 459.848L160.051 473.188C159.153 473.695 158.45 473.988 157.61 473.988Z" fill="white"/>
@@ -143,8 +143,9 @@ export const STAGE_MARKUP = `
 <rect id="playPauseHit" x="139" y="424" width="62" height="66" fill="white" fill-opacity="0" style="cursor:pointer"/>
 <path d="M83.3389 466.016C82.7803 466.016 82.2979 465.851 81.752 465.533L68.752 457.891C67.7998 457.332 67.3301 456.659 67.3301 455.809C67.3301 454.971 67.7998 454.311 68.752 453.739L81.752 446.097C82.3106 445.779 82.7803 445.614 83.3389 445.614C84.4434 445.614 85.3701 446.452 85.3701 447.988V455.301C85.5225 454.691 85.9795 454.184 86.7285 453.739L99.7285 446.097C100.287 445.779 100.757 445.614 101.315 445.614C102.42 445.614 103.347 446.452 103.347 447.988V463.642C103.347 465.178 102.42 466.016 101.315 466.016C100.757 466.016 100.274 465.851 99.7285 465.533L86.7285 457.891C85.9795 457.446 85.5225 456.938 85.3701 456.329V463.642C85.3701 465.178 84.4434 466.016 83.3389 466.016Z" fill="white"/>
 <path d="M235.269 466.016C234.164 466.016 233.237 465.178 233.237 463.642V447.988C233.237 446.452 234.164 445.614 235.269 445.614C235.827 445.614 236.297 445.779 236.855 446.097L249.855 453.739C250.605 454.184 251.062 454.691 251.214 455.301V447.988C251.214 446.452 252.141 445.614 253.245 445.614C253.804 445.614 254.273 445.779 254.832 446.097L267.832 453.739C268.797 454.311 269.267 454.971 269.267 455.809C269.267 456.659 268.784 457.332 267.832 457.891L254.832 465.533C254.286 465.851 253.804 466.016 253.258 466.016C252.141 466.016 251.214 465.178 251.214 463.642V456.329C251.062 456.938 250.605 457.446 249.855 457.891L236.855 465.533C236.31 465.851 235.827 466.016 235.269 466.016Z" fill="white"/>
-<rect x="27" y="391" width="282" height="7" rx="3.5" fill="white" fill-opacity="0.15"/>
-<rect id="progressFill" x="27" y="391" width="141" height="7" rx="3.5" fill="white"/>
+<rect id="progressTrack" x="27" y="391" width="282" height="7" rx="3.5" fill="white" fill-opacity="0.15"/>
+<rect id="progressFill" x="27" y="391" width="0" height="7" rx="3.5" fill="white"/>
+<rect id="progressHit" x="17" y="384" width="302" height="20" rx="10" fill="white" fill-opacity="0" style="cursor:pointer"/>
 <g id="volumeSlider" transform="translate(25 509)">
 <rect x="26" y="5" width="225" height="7" rx="3.5" fill="white" fill-opacity="0.15"/>
 <rect id="volumeFill" opacity="0.65" x="26" y="5" width="113" height="7" rx="3.5" fill="white"/>
