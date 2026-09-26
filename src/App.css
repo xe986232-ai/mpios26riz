@@ -12,9 +12,8 @@
   .page-wrap { display: flex; align-items: center; justify-content: center; gap: 32px; width: 100%; min-height: 100vh; padding: 24px; }
   .stage-col { flex-shrink: 0; margin-left: 0; }
   .stage { position: relative; width: min(450px, 92vw); aspect-ratio: 450 / 920; }
-  .cc { position: absolute; inset: 0; opacity: 1; transition: opacity .5s ease; }
+  .cc { position: absolute; inset: 0; }
   .cc svg { width: 100%; height: 100%; display: block; }
-  .stage.open .cc { opacity: 0; pointer-events: none; }
   /* Player menutupi area layar HP: x=24..426, y=23..897 dari canvas 450x920 */
   .player {
     position: absolute; left: 5.33%; top: 10.98%;
@@ -88,19 +87,24 @@
     background: #0a84ff; border-radius: 2px; transform-origin: 1.5px 26px;
   }
   .knob-dot { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(255,255,255,.4); }
-  /* Sembunyikan kartu & border saat player terbuka */
-  .cc svg > rect, .cc svg g[clip-path] > *, .cc svg [id^="ccBorder"], .cc svg g[style*="plus-lighter"] {
-    transition: opacity .45s ease, filter .45s ease;
+  /* Sembunyikan HANYA tombol/kartu/border Control Center saat player terbuka —
+     frame HP (.phone-frame) & video wallpaper (2 foreignObject pertama di dalam
+     g[clip-path]) sengaja TIDAK disentuh supaya tetap terlihat. */
+  .cc svg > g[clip-path] > *:nth-child(n+3),
+  .cc svg > rect:not(.phone-frame) {
+    opacity: 1;
+    transition: opacity .5s ease;
   }
-  .stage.open .cc svg g[clip-path] > foreignObject .wallpaper-video { filter: brightness(0); }
-  .stage.open .cc .cc-hit { opacity: 0 !important; pointer-events: none !important; }
+  .stage.open .cc svg > g[clip-path] > *:nth-child(n+3),
+  .stage.open .cc svg > rect:not(.phone-frame) {
+    opacity: 0;
+    pointer-events: none;
+  }
   .cc svg > rect.phone-frame { opacity: 1 !important; }
   .player { z-index: 2; }
   .stage::after { content: ""; position: absolute; left: 5.33%; top: 2.5%; width: 89.33%; height: 95%; border-radius: 13.5% / 6.2%; z-index: 1; pointer-events: none; opacity: 0; background: rgba(0,0,0,0); -webkit-backdrop-filter: blur(0px); backdrop-filter: blur(0px); transition: opacity .5s ease, backdrop-filter .5s ease, -webkit-backdrop-filter .5s ease, background .5s ease; }
   .stage.open::after { opacity: 1; background: rgba(0,0,0,.15); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
   .hint { position: absolute; bottom: -40px; left: 0; right: 0; text-align: center; color: #8e8e93; font-size: 13px; }
-  .cc svg > *:not(.phone-frame):not(defs):not(style) { filter: blur(0px); transition: filter .5s ease, opacity .5s ease; }
-  .stage.open .cc svg > *:not(.phone-frame):not(defs):not(style) { filter: blur(10px); }
   #playIcon, #pauseIcon { transition: opacity .2s ease; }
   #playPauseIconGroup { transform-box: fill-box; transform-origin: center; }
   @keyframes iconBounce {
