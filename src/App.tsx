@@ -142,6 +142,68 @@ export default function App() {
     };
     on(stage, 'click', stageCloseHandler);
 
+    // ==== Efek "ketekan" di kartu Control Center ====
+    // .cc-hit itu cuma layer transparan buat nangkep klik — scale doang di rect
+    // transparan itu gak keliatan sama sekali. Jadi di sini kita cari elemen visual
+    // (background, border, icon) yang posisinya (titik tengah bounding box-nya) ada
+    // di dalam area tiap kartu, terus semuanya di-scale bareng dari titik tengah yang
+    // SAMA (transform-box: view-box) pas ditekan — biar kartunya kerasa "masuk ke dalam"
+    // beneran, bukan cuma highlight transparan yang nempel doang.
+    const ccSvg = root.querySelector('.cc svg');
+    if (ccSvg) {
+      const allHits = Array.from(ccSvg.querySelectorAll<SVGRectElement>('.cc-hit'));
+      // Kartu kecil di dalam kartu besar (class "in") diproses duluan biar dia yang
+      // "ngeklaim" visualnya sendiri dulu — biar kartu besar di luar nggak ikut narik
+      // ikon-ikon kecil di dalamnya pas kartu besar itu yang ditekan.
+      const sortedHits = [...allHits].sort((a) => (a.classList.contains('in') ? -1 : 1));
+
+      const candidateSelector = 'path, rect, circle, ellipse, polygon, polyline, image, use';
+      const allCandidates = Array.from(ccSvg.querySelectorAll<SVGGraphicsElement>(candidateSelector)).filter(
+        (el) => !el.classList.contains('cc-hit') && !el.closest('defs')
+      );
+      const claimed = new Set<SVGGraphicsElement>();
+
+      sortedHits.forEach((hit) => {
+        const hx = parseFloat(hit.getAttribute('x') || '0');
+        const hy = parseFloat(hit.getAttribute('y') || '0');
+        const hw = parseFloat(hit.getAttribute('width') || '0');
+        const hh = parseFloat(hit.getAttribute('height') || '0');
+        const cx = hx + hw / 2;
+        const cy = hy + hh / 2;
+
+        const members: SVGGraphicsElement[] = [];
+        for (const el of allCandidates) {
+          if (claimed.has(el)) continue;
+          let bbox: DOMRect;
+          try {
+            bbox = el.getBBox();
+          } catch {
+            continue;
+          }
+          if (bbox.width === 0 && bbox.height === 0) continue;
+          const ecx = bbox.x + bbox.width / 2;
+          const ecy = bbox.y + bbox.height / 2;
+          if (ecx >= hx && ecx <= hx + hw && ecy >= hy && ecy <= hy + hh) {
+            members.push(el);
+            claimed.add(el);
+          }
+        }
+        if (members.length === 0) return;
+
+        members.forEach((el) => {
+          el.style.transformBox = 'view-box';
+          el.style.transformOrigin = `${cx}px ${cy}px`;
+          el.style.transition = 'transform .12s ease-out';
+        });
+        const press = () => members.forEach((el) => (el.style.transform = 'scale(0.94)'));
+        const release = () => members.forEach((el) => (el.style.transform = ''));
+        on(hit, 'pointerdown', press);
+        on(hit, 'pointerup', release);
+        on(hit, 'pointerleave', release);
+        on(hit, 'pointercancel', release);
+      });
+    }
+
     // ==== Customize panel: rounded / smoothing / panjang / lebar / opacity kartu music player ====
     const DEFAULTS = {
       radius: 125,
