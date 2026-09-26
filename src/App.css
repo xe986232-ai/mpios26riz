@@ -54,6 +54,21 @@
     background: rgba(255,255,255,.1); color: #f2f2f7; font-size: 13px; font-weight: 600; cursor: pointer;
   }
   .audio-upload-btn:active { background: rgba(255,255,255,.2); }
+  .album-art-upload-wrap {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    width: 100%; padding: 14px 16px; margin-bottom: 12px;
+    border-radius: 16px; border: 1px solid rgba(255,255,255,.1);
+    background: rgba(255,255,255,.06);
+  }
+  .album-art-label { font-size: 13px; font-weight: 600; color: #f2f2f7; }
+  .album-art-btns { display: flex; gap: 8px; }
+  .album-art-btn {
+    padding: 9px 16px; border-radius: 10px; border: none;
+    background: rgba(255,255,255,.1); color: #f2f2f7; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .album-art-btn:active { background: rgba(255,255,255,.2); }
+  .album-art-btn-danger { background: rgba(255,69,58,.18); }
+  .album-art-btn-danger:active { background: rgba(255,69,58,.3); }
   .audio-canvas-info {
     position: absolute; left: 0; right: 0; bottom: 0; align-items: center; justify-content: space-between;
     padding: 10px 14px; gap: 10px; background: linear-gradient(to top, rgba(0,0,0,.55), transparent);

@@ -406,6 +406,21 @@ export default function App() {
     const removeArtBtn = $<HTMLElement>('removeArtBtn');
     const albumArtImage = $<SVGImageElement>('albumArtImage');
     const albumArtPlaceholder = $<SVGElement>('albumArtPlaceholder');
+    // Gambar kecil yang sama, ditampilkan juga di kartu widget Control Center kanan atas
+    const widgetAlbumArtImage = $<SVGImageElement>('widgetAlbumArtImage');
+
+    // Set (atau kosongkan) album art sekaligus di Music Player & kartu widget, biar selalu sinkron.
+    function setAlbumArt(dataUrl: string) {
+      const hasArt = dataUrl !== '';
+      albumArtImage.setAttribute('href', dataUrl);
+      albumArtImage.setAttribute('xlink:href', dataUrl);
+      albumArtImage.setAttribute('opacity', hasArt ? '1' : '0');
+      albumArtPlaceholder.setAttribute('opacity', hasArt ? '0' : '0.25');
+      widgetAlbumArtImage.setAttribute('href', dataUrl);
+      widgetAlbumArtImage.setAttribute('xlink:href', dataUrl);
+      widgetAlbumArtImage.setAttribute('opacity', hasArt ? '1' : '0');
+      removeArtBtn.style.display = hasArt ? 'block' : 'none';
+    }
 
     on(uploadArtBtn, 'click', (e: Event) => {
       e.stopPropagation();
@@ -413,11 +428,7 @@ export default function App() {
     });
     on(removeArtBtn, 'click', (e: Event) => {
       e.stopPropagation();
-      albumArtImage.setAttribute('href', '');
-      albumArtImage.setAttribute('xlink:href', '');
-      albumArtImage.setAttribute('opacity', '0');
-      albumArtPlaceholder.setAttribute('opacity', '0.25');
-      removeArtBtn.style.display = 'none';
+      setAlbumArt('');
       ctrlAlbumArt.value = '';
     });
     on(ctrlAlbumArt, 'click', (e: Event) => e.stopPropagation());
@@ -427,11 +438,7 @@ export default function App() {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const dataUrl = ev.target?.result as string;
-        albumArtImage.setAttribute('href', dataUrl);
-        albumArtImage.setAttribute('xlink:href', dataUrl);
-        albumArtImage.setAttribute('opacity', '1');
-        albumArtPlaceholder.setAttribute('opacity', '0');
-        removeArtBtn.style.display = 'block';
+        setAlbumArt(dataUrl);
       };
       reader.readAsDataURL(file);
     });
@@ -533,17 +540,9 @@ export default function App() {
       songArtist.textContent = data.song.artist || ' ';
 
       if (data.albumArt) {
-        albumArtImage.setAttribute('href', data.albumArt);
-        albumArtImage.setAttribute('xlink:href', data.albumArt);
-        albumArtImage.setAttribute('opacity', '1');
-        albumArtPlaceholder.setAttribute('opacity', '0');
-        removeArtBtn.style.display = 'block';
+        setAlbumArt(data.albumArt);
       } else {
-        albumArtImage.setAttribute('href', '');
-        albumArtImage.setAttribute('xlink:href', '');
-        albumArtImage.setAttribute('opacity', '0');
-        albumArtPlaceholder.setAttribute('opacity', '0.25');
-        removeArtBtn.style.display = 'none';
+        setAlbumArt('');
       }
 
       applyCardStyle();
@@ -1177,6 +1176,14 @@ export default function App() {
         </div>
       </div>
       <div className="customize-wrap">
+        <div className="album-art-upload-wrap" id="albumArtUploadWrap">
+          <span className="album-art-label">Cover / Album Art</span>
+          <div className="album-art-btns">
+            <input type="file" accept="image/*" id="ctrlAlbumArt" style={{ display: 'none' }} />
+            <button type="button" className="album-art-btn" id="uploadArtBtn">Upload Gambar</button>
+            <button type="button" className="album-art-btn album-art-btn-danger" id="removeArtBtn" style={{ display: 'none' }}>Hapus Gambar</button>
+          </div>
+        </div>
         <div className="toolbar-row">
           <button type="button" className="customize-toggle" id="customizeToggle">
             <span>Customize</span>
