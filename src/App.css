@@ -29,7 +29,7 @@
      simetris atas-bawah oleh overflow:hidden milik .stage-frame. Hasilnya konten mengisi
      penuh kanvas (gak ada lagi ruang kosong/letterbox), sedikit zoom-in, tanpa distorsi rasio.
      Semua posisi persen di dalamnya (.player, dll) tetap relatif ke .stage jadi tidak perlu diubah. */
-  .stage { position: relative; width: 100%; height: auto; aspect-ratio: 450 / 920; }
+  .stage { position: relative; width: 118%; height: auto; aspect-ratio: 450 / 920; }
   .cc { position: absolute; inset: 0; }
   .cc svg { width: 100%; height: 100%; display: block; }
   /* Player menutupi area layar HP: x=24..426, y=23..897 dari canvas 450x920 */
