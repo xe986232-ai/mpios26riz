@@ -272,4 +272,12 @@ export const PANELS_MARKUP = `
     <button class="reset-btn" id="resetCcBtn">Reset ke default</button>
   </div>
 
+  <div class="control-panel">
+    <h3>Export / Import Settings</h3>
+    <div class="sub">Simpan hasil customize jadi file, biar bisa dipakai lagi tanpa atur manual</div>
+    <input type="file" id="ctrlImportSettings" accept="application/json" style="display:none">
+    <button class="reset-btn" id="exportSettingsBtn">Export Settings (.json)</button>
+    <button class="reset-btn" id="importSettingsBtn" style="margin-top:8px;">Import Settings</button>
+  </div>
+
 `;

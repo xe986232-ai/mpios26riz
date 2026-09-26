@@ -333,6 +333,126 @@ export default function App() {
     });
     [ctrlSongTitle, ctrlSongArtist].forEach((el) => on(el, 'click', (e: Event) => e.stopPropagation()));
 
+    // ==== Export / Import Settings — simpan hasil customize jadi file, biar gak perlu atur manual lagi ====
+    const exportSettingsBtn = $('exportSettingsBtn');
+    const importSettingsBtn = $('importSettingsBtn');
+    const ctrlImportSettings = $<HTMLInputElement>('ctrlImportSettings');
+
+    type ExportedSettings = {
+      version: 1;
+      card: {
+        radius: number;
+        smoothing: number;
+        height: number;
+        width: number;
+        opacity: number;
+        rotate: number;
+        length: number;
+      };
+      cover: { radius: number; smoothing: number };
+      ccOpacity: number;
+      song: { title: string; artist: string; font: string };
+      albumArt: string | null;
+    };
+
+    function collectSettings(): ExportedSettings {
+      return {
+        version: 1,
+        card: {
+          radius: Number(ctrlRadius.value),
+          smoothing: Number(ctrlSmooth.value),
+          height: Number(ctrlHeight.value),
+          width: Number(ctrlWidth.value),
+          opacity: Number(ctrlOpacity.value),
+          rotate: rotateDeg,
+          length: Number(ctrlLength.value),
+        },
+        cover: {
+          radius: Number(ctrlCoverRadius.value),
+          smoothing: Number(ctrlCoverSmooth.value),
+        },
+        ccOpacity: Number(ctrlCcOpacity.value),
+        song: {
+          title: ctrlSongTitle.value,
+          artist: ctrlSongArtist.value,
+          font: ctrlMusicFont.value,
+        },
+        // href SVG kosong ("") dianggap "tidak ada album art custom"
+        albumArt: albumArtImage.getAttribute('href') || null,
+      };
+    }
+
+    function applySettings(data: ExportedSettings) {
+      ctrlRadius.value = String(data.card.radius);
+      ctrlSmooth.value = String(data.card.smoothing);
+      ctrlHeight.value = String(data.card.height);
+      ctrlWidth.value = String(data.card.width);
+      ctrlOpacity.value = String(data.card.opacity);
+      ctrlLength.value = String(data.card.length);
+      ctrlCoverRadius.value = String(data.cover.radius);
+      ctrlCoverSmooth.value = String(data.cover.smoothing);
+      ctrlCcOpacity.value = String(data.ccOpacity);
+      ctrlSongTitle.value = data.song.title;
+      ctrlSongArtist.value = data.song.artist;
+      ctrlMusicFont.value = data.song.font;
+
+      songTitle.textContent = data.song.title || ' ';
+      songArtist.textContent = data.song.artist || ' ';
+
+      if (data.albumArt) {
+        albumArtImage.setAttribute('href', data.albumArt);
+        albumArtImage.setAttribute('xlink:href', data.albumArt);
+        albumArtImage.setAttribute('opacity', '1');
+        albumArtPlaceholder.setAttribute('opacity', '0');
+        removeArtBtn.style.display = 'block';
+      } else {
+        albumArtImage.setAttribute('href', '');
+        albumArtImage.setAttribute('xlink:href', '');
+        albumArtImage.setAttribute('opacity', '0');
+        albumArtPlaceholder.setAttribute('opacity', '0.25');
+        removeArtBtn.style.display = 'none';
+      }
+
+      applyCardStyle();
+      applyAlbumArtStyle();
+      applyCcOpacity();
+      applyMusicFont();
+      setBorderRotation(data.card.rotate);
+    }
+
+    on(exportSettingsBtn, 'click', (e: Event) => {
+      e.stopPropagation();
+      const data = collectSettings();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'control-center-settings.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    on(importSettingsBtn, 'click', (e: Event) => {
+      e.stopPropagation();
+      ctrlImportSettings.click();
+    });
+    on(ctrlImportSettings, 'click', (e: Event) => e.stopPropagation());
+    on(ctrlImportSettings, 'change', () => {
+      const file = ctrlImportSettings.files && ctrlImportSettings.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = JSON.parse(String(ev.target?.result)) as ExportedSettings;
+          applySettings(data);
+        } catch {
+          alert('File settings tidak valid atau rusak.');
+        }
+        ctrlImportSettings.value = '';
+      };
+      reader.readAsText(file);
+    });
+
     // ==== Toggle Play / Pause ====
     const playIcon = $<HTMLElement>('playIcon');
     const pauseIcon = $<HTMLElement>('pauseIcon');
