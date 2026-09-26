@@ -17,8 +17,11 @@
     display: flex; align-items: center; justify-content: center; overflow: hidden;
   }
   /* .stage tetap mempertahankan proporsi asli desain (450:920) supaya semua positioning
-     persen (.player, dll) tidak perlu dihitung ulang; tinggal di-pusatkan di dalam kanvas 9:16 di atas. */
-  .stage { position: relative; height: 100%; width: auto; aspect-ratio: 450 / 920; }
+     persen (.player, dll) tidak perlu dihitung ulang. Di-set "cover" (lebar 100%, tinggi
+     ikut rasio asli) biar ngisi penuh kanvas 9:16 di atas tanpa sisa ruang kosong kiri-kanan —
+     konsekuensinya dikit bagian atas & bawah konten kepotong (overflow-nya dibuang oleh
+     overflow:hidden di .stage-frame), sekitar ±37px dari total tinggi 920 di tiap sisi. */
+  .stage { position: relative; width: 100%; height: auto; aspect-ratio: 450 / 920; }
   .cc { position: absolute; inset: 0; }
   .cc svg { width: 100%; height: 100%; display: block; }
   /* Player menutupi area layar HP: x=24..426, y=23..897 dari canvas 450x920 */
