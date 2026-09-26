@@ -112,6 +112,14 @@
   .customize-toggle:active { background: rgba(255,255,255,.12); }
   .customize-toggle .chevron { font-size: 16px; color: #8e8e93; transition: transform .2s ease; }
   .customize-toggle.open .chevron { transform: rotate(180deg); }
+  .toolbar-row { display: flex; gap: 10px; }
+  .toolbar-row .customize-toggle { flex: 1; }
+  .export-video-btn {
+    flex: 1; padding: 14px 18px; border-radius: 14px; border: 1px solid rgba(255,255,255,.1);
+    background: rgba(255,255,255,.06); color: #f2f2f7; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .export-video-btn:active { background: rgba(255,255,255,.12); }
+  .export-video-btn:disabled { opacity: .5; cursor: default; }
   @media (max-width: 820px) {
     /* align-items:center di sini supaya kanvas & panel customize tetap center secara horizontal
        (bukan flex-start bawaan dari .page-wrap versi desktop yang dipakai untuk sticky top-align). */

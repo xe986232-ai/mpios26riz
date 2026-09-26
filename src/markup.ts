@@ -305,16 +305,4 @@ export const PANELS_MARKUP = `
     <button class="reset-btn" id="exportFrameBtn">Export Frame (PNG 1080x1920)</button>
   </div>
 
-  <div class="control-panel">
-    <h3>Export Video</h3>
-    <div class="sub">Render tampilan HP jadi video MP4 30fps, rasio 9:16 (1080x1920)</div>
-    <button class="reset-btn" id="exportVideoBtn">Export Video (MP4)</button>
-    <div class="export-video-progress-wrap" id="exportVideoProgressWrap" style="display:none;">
-      <div class="export-video-progress-track">
-        <div class="export-video-progress-fill" id="exportVideoProgressFill" style="width:0%;"></div>
-      </div>
-      <div class="export-video-progress-label" id="exportVideoProgressLabel">Merender frame 0/0...</div>
-    </div>
-  </div>
-
 `;

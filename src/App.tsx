@@ -941,10 +941,19 @@ export default function App() {
         <div className="stage" id="stage" dangerouslySetInnerHTML={{ __html: STAGE_MARKUP }} />
       </div>
       <div className="customize-wrap">
-        <button type="button" className="customize-toggle" id="customizeToggle">
-          <span>Customize</span>
-          <span className="chevron" id="customizeChevron">⌄</span>
-        </button>
+        <div className="toolbar-row">
+          <button type="button" className="customize-toggle" id="customizeToggle">
+            <span>Customize</span>
+            <span className="chevron" id="customizeChevron">⌄</span>
+          </button>
+          <button type="button" className="export-video-btn" id="exportVideoBtn">Export Video</button>
+        </div>
+        <div className="export-video-progress-wrap" id="exportVideoProgressWrap" style={{ display: 'none' }}>
+          <div className="export-video-progress-track">
+            <div className="export-video-progress-fill" id="exportVideoProgressFill" style={{ width: '0%' }} />
+          </div>
+          <div className="export-video-progress-label" id="exportVideoProgressLabel">Merender frame 0/0...</div>
+        </div>
         <div className="panel-stack collapsed" id="panelStack" dangerouslySetInnerHTML={{ __html: PANELS_MARKUP }} />
       </div>
     </div>
