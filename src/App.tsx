@@ -404,7 +404,7 @@ export default function App() {
 
   return (
     <div className="page-wrap" ref={rootRef}>
-      <div className="stage-col" dangerouslySetInnerHTML={{ __html: STAGE_MARKUP }} />
+      <div className="stage stage-col" id="stage" dangerouslySetInnerHTML={{ __html: STAGE_MARKUP }} />
       <div className="panel-stack" dangerouslySetInnerHTML={{ __html: PANELS_MARKUP }} />
     </div>
   );
