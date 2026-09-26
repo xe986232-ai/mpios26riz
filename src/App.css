@@ -9,14 +9,18 @@
     background: #1b1b1f; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
     overflow-x: hidden; overflow-y: auto;
   }
-  .page-wrap { display: flex; align-items: center; justify-content: center; gap: 32px; width: 100%; min-height: 100vh; padding: 24px; }
+  .page-wrap { display: flex; align-items: flex-start; justify-content: center; gap: 32px; width: 100%; min-height: 100vh; padding: 24px; }
   .stage-col { flex-shrink: 0; margin-left: 0; }
   /* Kanvas luar rasio 9:16 — pembungkus tampilan, menggantikan "frame HP" yang sekarang disembunyikan (lihat rect.phone-frame di bawah). */
-  /* Kanvas luar dikunci di rasio 9:16 (setara 1080x1920), berapapun rasio konten di dalamnya. */
+  /* Kanvas luar dikunci di rasio 9:16 (setara 1080x1920), berapapun rasio konten di dalamnya — ukuran ini TIDAK BOLEH berubah oleh konten panjang apa pun. */
+  /* position: sticky + z-index tinggi + isolation supaya kanvas selalu jadi LAYER PALING ATAS: nempel di atas viewport saat discroll,
+     dan konten panel customize yang panjang di bawahnya akan lewat/tertutup DI BELAKANG kanvas, bukan mendorong atau menghimpit kanvas. */
   .stage-frame {
-    position: relative; width: min(450px, 92vw); aspect-ratio: 9 / 16;
+    position: sticky; top: 20px; z-index: 30; isolation: isolate;
+    width: min(450px, 92vw); aspect-ratio: 9 / 16;
     display: flex; align-items: center; justify-content: center; overflow: hidden;
     border-radius: 56px;
+    background: #000;
   }
   /* .stage tetap punya rasio asli desain (450:920), tapi sekarang dia yang MENYESUAIKAN
      ke dalam kanvas 9:16 di atas (mode "contain"): tinggi mengikuti 100% tinggi kanvas,
@@ -74,7 +78,12 @@
   .panel-stack.collapsed { display: none; }
   .panel-stack .control-panel { width: 100%; }
   .cc-opacity-panel .row { margin-bottom: 10px; }
-  .customize-wrap { display: flex; flex-direction: column; gap: 16px; width: 280px; flex-shrink: 0; }
+  /* Panel customize: posisi relative + z-index rendah, selalu di layer BAWAH kanvas.
+     margin-top memberi jarak visual yang jelas dari kanvas supaya tidak lagi terlihat "himpit". */
+  .customize-wrap {
+    display: flex; flex-direction: column; gap: 16px; width: 280px; flex-shrink: 0;
+    position: relative; z-index: 1; margin-top: 12px;
+  }
   .customize-toggle {
     display: flex; align-items: center; justify-content: space-between; width: 100%;
     padding: 14px 18px; border-radius: 14px; border: 1px solid rgba(255,255,255,.1);
@@ -84,9 +93,13 @@
   .customize-toggle .chevron { font-size: 16px; color: #8e8e93; transition: transform .2s ease; }
   .customize-toggle.open .chevron { transform: rotate(180deg); }
   @media (max-width: 820px) {
-    .page-wrap { flex-direction: column; padding: 20px 12px 56px; gap: 52px; }
+    /* align-items:center di sini supaya kanvas & panel customize tetap center secara horizontal
+       (bukan flex-start bawaan dari .page-wrap versi desktop yang dipakai untuk sticky top-align). */
+    .page-wrap { flex-direction: column; align-items: center; padding: 20px 12px 56px; gap: 52px; }
     .panel-stack { width: min(360px, 92vw); }
     .customize-wrap { width: min(360px, 92vw); }
+    /* Di mobile, kanvas sticky nempel sedikit lebih dekat ke atas viewport. */
+    .stage-frame { top: 12px; }
   }
   .knob-wrap { display: flex; justify-content: center; padding: 4px 0 2px; }
   .knob {
