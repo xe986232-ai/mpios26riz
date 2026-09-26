@@ -2,6 +2,78 @@ import { useEffect, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import { STAGE_MARKUP, PANELS_MARKUP } from './markup';
 
+// ==== Helper untuk Export Frame ====
+// html2canvas TIDAK BISA render <video> (cuma nge-skip/kosong) dan TIDAK support
+// backdrop-filter (dipakai buat efek blur wallpaper ala Control Center/iOS).
+// Solusinya: sebelum di-screenshot, kita "bekukan" frame video saat ini jadi gambar
+// statis, dan kita hitung sendiri hasil blur-nya pakai Canvas 2D (ctx.filter = blur),
+// lalu suntikkan sebagai <img> pengganti supaya html2canvas tinggal nge-capture
+// gambar biasa (yang memang didukung penuh).
+
+// Ambil frame video yang sedang tampil saat ini, ditempatkan ke kotak targetW x targetH
+// dengan logika object-fit: cover (sama seperti CSS video wallpaper aslinya).
+function captureVideoFrame(video: HTMLVideoElement, targetW: number, targetH: number): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas context tidak tersedia');
+  const vw = video.videoWidth || targetW;
+  const vh = video.videoHeight || targetH;
+  const scale = Math.max(targetW / vw, targetH / vh); // cover
+  const dw = vw * scale;
+  const dh = vh * scale;
+  const dx = (targetW - dw) / 2;
+  const dy = (targetH - dh) / 2;
+  ctx.drawImage(video, dx, dy, dw, dh);
+  return canvas.toDataURL('image/png');
+}
+
+// Blur + dim manual pakai Canvas 2D filter (didukung browser modern), meniru
+// backdrop-filter: blur(...) + overlay hitam semi-transparan. Gambar sumber di-extend
+// dulu ke kanvas yang dipadding sebelum di-blur, supaya tepi hasil blur tidak jadi
+// gelap/pudar (efek umum kalau blur langsung mepet ke tepi kanvas).
+function blurAndDim(
+  srcDataUrl: string,
+  w: number,
+  h: number,
+  blurPx: number,
+  dimAlpha: number
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const pad = Math.ceil(blurPx * 2.5);
+        const padded = document.createElement('canvas');
+        padded.width = w + pad * 2;
+        padded.height = h + pad * 2;
+        const pctx = padded.getContext('2d');
+        if (!pctx) throw new Error('Canvas context tidak tersedia');
+        // extend-edge murah: gambar sumber diregangkan menutupi area padding juga,
+        // nanti area padding ini dibuang lagi setelah di-blur.
+        pctx.drawImage(img, -pad, -pad, w + pad * 2, h + pad * 2);
+
+        const out = document.createElement('canvas');
+        out.width = w;
+        out.height = h;
+        const octx = out.getContext('2d');
+        if (!octx) throw new Error('Canvas context tidak tersedia');
+        octx.filter = `blur(${blurPx}px)`;
+        octx.drawImage(padded, -pad, -pad);
+        octx.filter = 'none';
+        octx.fillStyle = `rgba(0,0,0,${dimAlpha})`;
+        octx.fillRect(0, 0, w, h);
+        resolve(out.toDataURL('image/png'));
+      } catch (err) {
+        reject(err);
+      }
+    };
+    img.onerror = () => reject(new Error('Gagal memuat gambar untuk diblur'));
+    img.src = srcDataUrl;
+  });
+}
+
 export default function App() {
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -527,11 +599,106 @@ export default function App() {
       const originalLabel = exportFrameBtn.textContent || 'Export Frame (PNG 1080x1920)';
       exportFrameBtn.disabled = true;
       exportFrameBtn.textContent = 'Membuat gambar...';
+      let cloneWrap: HTMLDivElement | null = null;
       try {
         const rect = stage.getBoundingClientRect();
         // Render stage pada skala yang membuat tingginya pas 1920px, biar hasil tajam & rasio aslinya (450:920) otomatis kebagi rata di dalam kanvas 1080x1920.
         const scale = EXPORT_H / rect.height;
-        const captured = await html2canvas(stage, {
+
+        // ==== 1. Bekukan frame video wallpaper saat ini + siapkan lapisan blur pengganti backdrop-filter ====
+        const videoEl = root.querySelector<HTMLVideoElement>('.wallpaper-video');
+        const videoFO = videoEl?.closest('foreignObject') || null;
+        const wx = Number(videoFO?.getAttribute('x') ?? 24);
+        const wy = Number(videoFO?.getAttribute('y') ?? 23);
+        const ww = Number(videoFO?.getAttribute('width') ?? 402);
+        const wh = Number(videoFO?.getAttribute('height') ?? 874);
+        const CAPTURE_SCALE = 2.5; // resolusi capture wallpaper, independen dari skala export akhir
+        const cw = Math.round(ww * CAPTURE_SCALE);
+        const ch = Math.round(wh * CAPTURE_SCALE);
+
+        let rawWallpaperUrl: string | null = null;
+        let ccBlurUrl: string | null = null; // pengganti backdrop-filter blur(12px) + hitam 50% (selalu aktif di Control Center)
+        let openBlurUrl: string | null = null; // pengganti stage::after blur(18px) + hitam 15% (aktif saat Music Player terbuka)
+
+        if (videoEl && videoEl.readyState >= 2) {
+          rawWallpaperUrl = captureVideoFrame(videoEl, cw, ch);
+          ccBlurUrl = await blurAndDim(rawWallpaperUrl, cw, ch, 12 * CAPTURE_SCALE, 0.5);
+          if (stage.classList.contains('open')) {
+            openBlurUrl = await blurAndDim(ccBlurUrl, cw, ch, 18 * CAPTURE_SCALE, 0.15);
+          }
+        }
+
+        // ==== 2. Clone stage (biar modifikasi di bawah ini tidak mengganggu tampilan asli & video yang lagi jalan) ====
+        cloneWrap = document.createElement('div');
+        cloneWrap.className = 'export-frame-clone';
+        cloneWrap.style.cssText =
+          'position:fixed;left:-99999px;top:0;width:' + rect.width + 'px;height:' + rect.height + 'px;pointer-events:none;';
+
+        const stageClone = stage.cloneNode(true) as HTMLElement;
+        stageClone.removeAttribute('id');
+        // Matikan blur bawaan CSS punya clone ini: backdrop-filter tidak pernah kebawa html2canvas,
+        // tapi warna hitam datarnya (rgba tanpa blur) tetap bisa ke-render & bikin dobel gelap
+        // di atas lapisan pengganti yang kita suntikkan manual di bawah.
+        const styleOverride = document.createElement('style');
+        styleOverride.textContent = '.export-frame-clone .stage::after { display: none !important; }';
+        cloneWrap.appendChild(styleOverride);
+        cloneWrap.appendChild(stageClone);
+        document.body.appendChild(cloneWrap);
+
+        // Ganti <video> jadi <img> beku (frame saat ini)
+        const cloneVideoEl = stageClone.querySelector<HTMLVideoElement>('.wallpaper-video');
+        const cloneVideoFO = cloneVideoEl?.closest('foreignObject');
+        if (cloneVideoFO && rawWallpaperUrl) {
+          cloneVideoFO.innerHTML = `<img xmlns="http://www.w3.org/1999/xhtml" src="${rawWallpaperUrl}" style="width:100%;height:100%;object-fit:cover;display:block" />`;
+        }
+
+        // Ganti div backdrop-filter (blur Control Center yang selalu aktif) dengan gambar hasil blur manual.
+        // foreignObject-nya disamakan ukurannya dgn kotak wallpaper biar tidak perlu clip-path lagi.
+        const cloneBackdropDiv = stageClone.querySelector<HTMLElement>(
+          'foreignObject div[style*="backdrop-filter"]'
+        );
+        const backdropFO = cloneBackdropDiv?.closest('foreignObject');
+        if (backdropFO && ccBlurUrl) {
+          backdropFO.setAttribute('x', String(wx));
+          backdropFO.setAttribute('y', String(wy));
+          backdropFO.setAttribute('width', String(ww));
+          backdropFO.setAttribute('height', String(wh));
+          backdropFO.innerHTML = `<img xmlns="http://www.w3.org/1999/xhtml" src="${ccBlurUrl}" style="width:100%;height:100%;object-fit:cover;display:block" />`;
+        }
+
+        // Path tint hitam 50% datar (fallback figma) dimatikan karena sudah kebawa di dalam ccBlurUrl,
+        // kalau dibiarkan nyala dobel jadi lebih gelap dari aslinya.
+        const flatTintPath = stageClone.querySelector('path[data-figma-bg-blur-radius]');
+        if (flatTintPath) flatTintPath.setAttribute('fill-opacity', '0');
+
+        // Kalau Music Player sedang terbuka, tambahkan lapisan dim+blur ekstra persis
+        // menggantikan .stage::after (blur 18px + hitam 15% di atas wallpaper yang sudah diblur tahap 1)
+        if (openBlurUrl) {
+          const afterLayer = document.createElement('div');
+          afterLayer.style.cssText =
+            'position:absolute;left:5.33%;top:2.5%;width:89.33%;height:95%;z-index:1;pointer-events:none;overflow:hidden;border-radius:13.5%/6.2%;';
+          const afterImg = document.createElement('img');
+          afterImg.src = openBlurUrl;
+          afterImg.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+          afterLayer.appendChild(afterImg);
+          stageClone.appendChild(afterLayer);
+        }
+
+        // Tunggu semua <img> pengganti kelar dimuat sebelum di-screenshot
+        const injectedImgs = Array.from(stageClone.querySelectorAll('img'));
+        await Promise.all(
+          injectedImgs.map(
+            (img) =>
+              new Promise<void>((resolve) => {
+                if (img.complete) return resolve();
+                img.onload = () => resolve();
+                img.onerror = () => resolve();
+              })
+          )
+        );
+
+        // ==== 3. Screenshot clone yang sudah "dibekukan" (video jadi gambar, blur sudah di-bake manual) ====
+        const captured = await html2canvas(stageClone, {
           backgroundColor: null,
           useCORS: true,
           scale,
@@ -565,6 +732,7 @@ export default function App() {
         console.error('Export frame gagal:', err);
         alert('Gagal export gambar. Coba lagi.');
       } finally {
+        if (cloneWrap && cloneWrap.parentNode) cloneWrap.parentNode.removeChild(cloneWrap);
         exportFrameBtn.disabled = false;
         exportFrameBtn.textContent = originalLabel;
       }
