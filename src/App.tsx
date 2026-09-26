@@ -592,8 +592,7 @@ export default function App() {
 
     // ==== Export Frame: capture tampilan HP saat ini jadi PNG rasio 9:16 (1080x1920) ====
     const exportFrameBtn = $<HTMLButtonElement>('exportFrameBtn');
-    const EXPORT_W = 1080;
-    const EXPORT_H = 1920;
+    const EXPORT_H = 1920; // tinggi target hasil export (lebar dihitung otomatis dari rasio layar HP)
     on(exportFrameBtn, 'click', async (e: Event) => {
       e.stopPropagation();
       const originalLabel = exportFrameBtn.textContent || 'Export Frame (PNG 1080x1920)';
@@ -704,28 +703,32 @@ export default function App() {
           scale,
         });
 
+        // ==== 4. Crop: buang frame/bezel HP, sisain area layarnya aja (wx,wy,ww,wh — persis kotak yang sama
+        // dipakai wallpaper/blur di atas). Stage full = viewBox 450x920, jadi posisinya tinggal dihitung
+        // proporsional terhadap ukuran hasil capture (yang sudah proporsional 450:920 juga).
+        const cropX = (wx / 450) * captured.width;
+        const cropY = (wy / 920) * captured.height;
+        const cropW = (ww / 450) * captured.width;
+        const cropH = (wh / 920) * captured.height;
+
+        // Output disamakan rasionya dengan area layar itu sendiri (~402:874), tinggi target tetap ~1920px
+        // biar tajam, tanpa nambah background/letterbox — sudut yang membulat otomatis transparan.
+        const outH = EXPORT_H;
+        const outW = Math.round(outH * (ww / wh));
+
         const out = document.createElement('canvas');
-        out.width = EXPORT_W;
-        out.height = EXPORT_H;
+        out.width = outW;
+        out.height = outH;
         const ctx = out.getContext('2d');
         if (!ctx) throw new Error('Canvas context tidak tersedia');
-        ctx.fillStyle = '#1b1b1f';
-        ctx.fillRect(0, 0, EXPORT_W, EXPORT_H);
-
-        // Fit "contain": skalakan lagi kalau ternyata lebih lebar/tinggi dari kanvas target, lalu taruh di tengah.
-        const fitScale = Math.min(EXPORT_W / captured.width, EXPORT_H / captured.height, 1);
-        const drawW = captured.width * fitScale;
-        const drawH = captured.height * fitScale;
-        const dx = Math.round((EXPORT_W - drawW) / 2);
-        const dy = Math.round((EXPORT_H - drawH) / 2);
-        ctx.drawImage(captured, dx, dy, drawW, drawH);
+        ctx.drawImage(captured, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
 
         const blob: Blob | null = await new Promise((resolve) => out.toBlob(resolve, 'image/png'));
         if (!blob) throw new Error('Gagal membuat PNG');
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'control-center-frame-1080x1920.png';
+        a.download = `control-center-frame-${outW}x${outH}.png`;
         a.click();
         URL.revokeObjectURL(url);
       } catch (err) {
