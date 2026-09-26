@@ -10,11 +10,11 @@
     overflow-x: hidden; overflow-y: auto;
   }
   .page-wrap { display: flex; align-items: flex-start; justify-content: center; gap: 32px; width: 100%; min-height: 100vh; padding: 24px; }
-  .stage-col { flex-shrink: 0; margin-left: 0; }
   /* Kanvas luar rasio 9:16 — pembungkus tampilan, menggantikan "frame HP" yang sekarang disembunyikan (lihat rect.phone-frame di bawah). */
   /* Kanvas luar dikunci di rasio 9:16 (setara 1080x1920), berapapun rasio konten di dalamnya — ukuran ini TIDAK BOLEH berubah oleh konten panjang apa pun. */
   /* position: sticky + z-index tinggi + isolation supaya kanvas selalu jadi LAYER PALING ATAS: nempel di atas viewport saat discroll,
      dan konten panel customize yang panjang di bawahnya akan lewat/tertutup DI BELAKANG kanvas, bukan mendorong atau menghimpit kanvas. */
+  .stage-col { flex-shrink: 0; margin-left: 0; display: flex; flex-direction: column; gap: 16px; }
   .stage-frame {
     position: sticky; top: 20px; z-index: 30; isolation: isolate;
     width: min(450px, 92vw); aspect-ratio: 9 / 16;
@@ -22,6 +22,35 @@
     border-radius: 28px;
     background: #000;
   }
+  /* Kanvas audio: sama lebarnya dengan .stage-frame, tempat waveform digambar + tombol upload nempel di dalamnya. */
+  .audio-canvas-wrap {
+    position: relative; width: min(450px, 92vw); height: 140px;
+    border-radius: 20px; border: 1px solid rgba(255,255,255,.1);
+    background: rgba(255,255,255,.06); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+    overflow: hidden;
+  }
+  .audio-waveform-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .audio-canvas-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .audio-upload-btn {
+    padding: 12px 22px; border-radius: 12px; border: none;
+    background: rgba(255,255,255,.1); color: #f2f2f7; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .audio-upload-btn:active { background: rgba(255,255,255,.2); }
+  .audio-canvas-info {
+    position: absolute; left: 0; right: 0; bottom: 0; align-items: center; justify-content: space-between;
+    padding: 10px 14px; gap: 10px; background: linear-gradient(to top, rgba(0,0,0,.55), transparent);
+  }
+  .audio-canvas-info span {
+    font-size: 12px; color: #f2f2f7; font-variant-numeric: tabular-nums;
+  }
+  .audio-canvas-info #audioFileName {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px;
+  }
+  .audio-replace-btn {
+    padding: 6px 12px; border-radius: 10px; border: none; flex-shrink: 0;
+    background: rgba(255,255,255,.15); color: #f2f2f7; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .audio-replace-btn:active { background: rgba(255,255,255,.25); }
   /* .stage tetap punya rasio asli desain (450:920), diskalakan ke dalam kanvas 9:16 di atas
      pakai mode "cover" (bukan "contain" lagi): lebar mengikuti 100% lebar kanvas, tinggi
      dihitung otomatis dari aspect-ratio — jadi selalu MELEBIHI tinggi kanvas sedikit (karena

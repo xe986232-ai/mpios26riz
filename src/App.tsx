@@ -641,6 +641,95 @@ export default function App() {
       else stopTick();
     });
 
+    // ==== Audio Canvas: upload file audio + render waveform-nya ====
+    const audioWaveformCanvas = $<HTMLCanvasElement>('audioWaveformCanvas');
+    const audioCanvasEmpty = $('audioCanvasEmpty');
+    const audioCanvasInfo = $('audioCanvasInfo');
+    const audioUploadInput = $<HTMLInputElement>('audioUploadInput');
+    const audioUploadBtn = $<HTMLButtonElement>('audioUploadBtn');
+    const audioReplaceBtn = $<HTMLButtonElement>('audioReplaceBtn');
+    const audioFileNameEl = $('audioFileName');
+    const audioFileDurationEl = $('audioFileDuration');
+
+    // Disimpan di closure biar bisa dipakai fitur lain nanti (mis. sinkron ke Export Video)
+    let loadedAudioBuffer: AudioBuffer | null = null;
+
+    function fmtAudioTime(sec: number) {
+      sec = Math.max(0, Math.round(sec));
+      return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+    }
+
+    function drawWaveform(buffer: AudioBuffer) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = audioWaveformCanvas.getBoundingClientRect();
+      audioWaveformCanvas.width = Math.max(1, Math.round(rect.width * dpr));
+      audioWaveformCanvas.height = Math.max(1, Math.round(rect.height * dpr));
+      const ctx = audioWaveformCanvas.getContext('2d');
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const w = rect.width;
+      const h = rect.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const data = buffer.getChannelData(0); // channel pertama cukup buat preview visual
+      const samplesPerPixel = Math.max(1, Math.floor(data.length / w));
+      const mid = h / 2;
+      ctx.fillStyle = '#0a84ff';
+      for (let x = 0; x < w; x++) {
+        const start = x * samplesPerPixel;
+        let min = 1;
+        let max = -1;
+        for (let i = 0; i < samplesPerPixel; i++) {
+          const v = data[start + i] || 0;
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
+        const yTop = mid + min * mid;
+        const barH = Math.max(1, (max - min) * mid);
+        ctx.fillRect(x, yTop, 1, barH);
+      }
+    }
+
+    async function handleAudioFile(file: File) {
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        const decodeCtx = new AudioCtx();
+        const decoded = await decodeCtx.decodeAudioData(arrayBuffer);
+        loadedAudioBuffer = decoded;
+        void decodeCtx.close();
+
+        audioCanvasEmpty.style.display = 'none';
+        audioWaveformCanvas.style.display = 'block';
+        drawWaveform(decoded);
+        audioCanvasInfo.style.display = 'flex';
+        audioFileNameEl.textContent = file.name;
+        audioFileDurationEl.textContent = fmtAudioTime(decoded.duration);
+      } catch (err) {
+        console.error('Gagal memuat audio:', err);
+        alert('Gagal memuat file audio. Coba file lain.');
+      }
+    }
+
+    on(audioUploadBtn, 'click', (e: Event) => {
+      e.stopPropagation();
+      audioUploadInput.click();
+    });
+    on(audioReplaceBtn, 'click', (e: Event) => {
+      e.stopPropagation();
+      audioUploadInput.click();
+    });
+    on(audioUploadInput, 'change', () => {
+      const file = audioUploadInput.files && audioUploadInput.files[0];
+      if (file) void handleAudioFile(file);
+      audioUploadInput.value = '';
+    });
+    const handleAudioCanvasResize = () => {
+      if (loadedAudioBuffer) drawWaveform(loadedAudioBuffer);
+    };
+    window.addEventListener('resize', handleAudioCanvasResize);
+    cleanupFns.push(() => window.removeEventListener('resize', handleAudioCanvasResize));
+
     // ==== Export Frame & Export Video: capture KANVAS 9:16 (.stage-frame) apa adanya ====
     // Patokan export sekarang .stage-frame (kanvas yang tampak di layar, sudah terkunci rasio 9:16 lewat CSS),
     // BUKAN lagi area layar HP di dalam SVG (yang rasionya ~402:874, beda dari kanvas). Jadi apa yang kelihatan
@@ -937,8 +1026,22 @@ export default function App() {
 
   return (
     <div className="page-wrap" ref={rootRef}>
-      <div className="stage-frame stage-col">
-        <div className="stage" id="stage" dangerouslySetInnerHTML={{ __html: STAGE_MARKUP }} />
+      <div className="stage-col">
+        <div className="stage-frame">
+          <div className="stage" id="stage" dangerouslySetInnerHTML={{ __html: STAGE_MARKUP }} />
+        </div>
+        <div className="audio-canvas-wrap" id="audioCanvasWrap">
+          <canvas id="audioWaveformCanvas" className="audio-waveform-canvas" style={{ display: 'none' }} />
+          <div className="audio-canvas-empty" id="audioCanvasEmpty">
+            <input type="file" accept="audio/*" id="audioUploadInput" style={{ display: 'none' }} />
+            <button type="button" className="audio-upload-btn" id="audioUploadBtn">Upload Audio</button>
+          </div>
+          <div className="audio-canvas-info" id="audioCanvasInfo" style={{ display: 'none' }}>
+            <span id="audioFileName"></span>
+            <span id="audioFileDuration"></span>
+            <button type="button" className="audio-replace-btn" id="audioReplaceBtn">Ganti</button>
+          </div>
+        </div>
       </div>
       <div className="customize-wrap">
         <div className="toolbar-row">
