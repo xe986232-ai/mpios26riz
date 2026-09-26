@@ -592,6 +592,11 @@ export default function App() {
     const pauseIcon = $<HTMLElement>('pauseIcon');
     const playPauseHit = $('playPauseHit');
     const playPauseIconGroup = $('playPauseIconGroup');
+    // Ikon play/pause versi kecil di kartu widget (Control Center)
+    const widgetPlayIcon = $<HTMLElement>('widgetPlayIcon');
+    const widgetPauseIcon = $<HTMLElement>('widgetPauseIcon');
+    const widgetPlayPauseHit = $('widgetPlayPauseHit');
+    const widgetPlayPauseIconGroup = $('widgetPlayPauseIconGroup');
     let isPlaying = false;
 
     // ==== Durasi lagu: waktu berjalan & sisa durasi ====
@@ -628,17 +633,38 @@ export default function App() {
     on(playPauseIconGroup, 'animationend', () => {
       playPauseIconGroup.classList.remove('bounce');
     });
-    on(playPauseHit, 'click', (e: Event) => {
-      e.stopPropagation();
+    on(widgetPlayPauseIconGroup, 'animationend', () => {
+      widgetPlayPauseIconGroup.classList.remove('bounce');
+    });
+
+    // Satu fungsi toggle dipakai bareng oleh tombol play/pause di Music Player
+    // dan tombol play/pause di kartu widget Control Center, biar state-nya selalu sinkron.
+    function togglePlayPause() {
       isPlaying = !isPlaying;
+
       playIcon.style.opacity = isPlaying ? '0' : '1';
       pauseIcon.style.opacity = isPlaying ? '1' : '0';
-      // restart animasi bounce
       playPauseIconGroup.classList.remove('bounce');
       void playPauseIconGroup.offsetWidth; // reflow biar animasi bisa diulang
       playPauseIconGroup.classList.add('bounce');
+
+      widgetPlayIcon.style.opacity = isPlaying ? '0' : '1';
+      widgetPauseIcon.style.opacity = isPlaying ? '1' : '0';
+      widgetPlayPauseIconGroup.classList.remove('bounce');
+      void widgetPlayPauseIconGroup.offsetWidth;
+      widgetPlayPauseIconGroup.classList.add('bounce');
+
       if (isPlaying) startTick();
       else stopTick();
+    }
+
+    on(playPauseHit, 'click', (e: Event) => {
+      e.stopPropagation();
+      togglePlayPause();
+    });
+    on(widgetPlayPauseHit, 'click', (e: Event) => {
+      e.stopPropagation(); // jangan sampai membuka Music Player, cuma toggle play/pause
+      togglePlayPause();
     });
 
     // ==== Audio Canvas: upload file audio, render waveform, preview play/pause ====
