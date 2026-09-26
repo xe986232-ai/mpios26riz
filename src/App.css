@@ -11,7 +11,14 @@
   }
   .page-wrap { display: flex; align-items: center; justify-content: center; gap: 32px; width: 100%; min-height: 100vh; padding: 24px; }
   .stage-col { flex-shrink: 0; margin-left: 0; }
-  .stage { position: relative; width: min(450px, 92vw); aspect-ratio: 450 / 920; }
+  /* Kanvas luar rasio 9:16 — pembungkus tampilan, menggantikan "frame HP" yang sekarang disembunyikan (lihat rect.phone-frame di bawah). */
+  .stage-frame {
+    position: relative; width: min(450px, 92vw); aspect-ratio: 9 / 16;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+  }
+  /* .stage tetap mempertahankan proporsi asli desain (450:920) supaya semua positioning
+     persen (.player, dll) tidak perlu dihitung ulang; tinggal di-pusatkan di dalam kanvas 9:16 di atas. */
+  .stage { position: relative; height: 100%; width: auto; aspect-ratio: 450 / 920; }
   .cc { position: absolute; inset: 0; }
   .cc svg { width: 100%; height: 100%; display: block; }
   /* Player menutupi area layar HP: x=24..426, y=23..897 dari canvas 450x920 */
@@ -100,7 +107,7 @@
     opacity: 0;
     pointer-events: none;
   }
-  .cc svg > rect.phone-frame { opacity: 1 !important; }
+  .cc svg > rect.phone-frame { display: none; }
   .player { z-index: 2; }
   .stage::after { content: ""; position: absolute; left: 5.33%; top: 2.5%; width: 89.33%; height: 95%; border-radius: 13.5% / 6.2%; z-index: 1; pointer-events: none; opacity: 0; background: rgba(0,0,0,0); -webkit-backdrop-filter: blur(0px); backdrop-filter: blur(0px); transition: opacity .5s ease, backdrop-filter .5s ease, -webkit-backdrop-filter .5s ease, background .5s ease; }
   .stage.open::after { opacity: 1; background: rgba(0,0,0,.15); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }

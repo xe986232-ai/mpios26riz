@@ -758,7 +758,9 @@ export default function App() {
 
   return (
     <div className="page-wrap" ref={rootRef}>
-      <div className="stage stage-col" id="stage" dangerouslySetInnerHTML={{ __html: STAGE_MARKUP }} />
+      <div className="stage-frame stage-col">
+        <div className="stage" id="stage" dangerouslySetInnerHTML={{ __html: STAGE_MARKUP }} />
+      </div>
       <div className="customize-wrap">
         <button type="button" className="customize-toggle" id="customizeToggle">
           <span>Customize</span>
