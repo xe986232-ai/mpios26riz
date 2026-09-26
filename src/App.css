@@ -13,15 +13,14 @@
   .stage-col { flex-shrink: 0; margin-left: 0; }
   /* Kanvas luar rasio 9:16 — pembungkus tampilan, menggantikan "frame HP" yang sekarang disembunyikan (lihat rect.phone-frame di bawah). */
   .stage-frame {
-    position: relative; width: min(450px, 92vw); aspect-ratio: 9 / 16;
+    position: relative; width: min(450px, 92vw); aspect-ratio: 450 / 920;
     display: flex; align-items: center; justify-content: center; overflow: hidden;
     border-radius: 56px;
   }
-  /* .stage tetap mempertahankan proporsi asli desain (450:920) supaya semua positioning
-     persen (.player, dll) tidak perlu dihitung ulang. Di-set "cover" (lebar 100%, tinggi
-     ikut rasio asli) biar ngisi penuh kanvas 9:16 di atas tanpa sisa ruang kosong kiri-kanan —
-     konsekuensinya dikit bagian atas & bawah konten kepotong (overflow-nya dibuang oleh
-     overflow:hidden di .stage-frame), sekitar ±37px dari total tinggi 920 di tiap sisi. */
+  /* Kanvas luar sekarang pakai rasio asli desain (450:920), sama persis dengan .stage,
+     jadi tidak ada lagi overflow yang kepotong di atas/bawah maupun di sudut-sudut
+     (yang sebelumnya kelihatan seperti "kepotong vertical" di kiri-kanan akibat
+     border-radius kanvas memotong konten yang overflow). */
   .stage { position: relative; width: 100%; height: auto; aspect-ratio: 450 / 920; }
   .cc { position: absolute; inset: 0; }
   .cc svg { width: 100%; height: 100%; display: block; }
