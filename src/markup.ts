@@ -269,8 +269,8 @@ export const PANELS_MARKUP = `
     <div class="sub">Atur seberapa besar konten mengisi kanvas 9:16, dan geser posisinya naik/turun</div>
 
     <div class="row">
-      <div class="row-head"><label for="ctrlStageZoom">Zoom Konten</label><span class="val" id="valStageZoom">118%</span></div>
-      <input type="range" id="ctrlStageZoom" min="100" max="200" step="1" value="118">
+      <div class="row-head"><label for="ctrlStageZoom">Zoom Konten</label><span class="val" id="valStageZoom">112%</span></div>
+      <input type="range" id="ctrlStageZoom" min="100" max="200" step="1" value="112">
     </div>
 
     <div class="row">

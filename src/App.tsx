@@ -139,7 +139,7 @@ export default function App() {
       coverRadius: 70,
       coverSmooth: 100,
       ccOpacity: 20,
-      stageZoom: 118,
+      stageZoom: 112,
       stageOffsetY: 0,
     };
 
