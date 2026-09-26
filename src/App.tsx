@@ -617,8 +617,13 @@ export default function App() {
     function renderDuration() {
       const dur = Math.max(0, songDuration);
       const pos = Math.min(Math.max(0, elapsed), dur);
-      timeElapsed.textContent = fmtTime(pos);
-      timeRemaining.textContent = '-' + fmtTime(dur - pos);
+      // Bulatkan sekali ke detik bulat (posSec), lalu turunkan sisa waktu dari angka
+      // yang sama (durSec - posSec) — supaya elapsed & remaining ganti detik BARENGAN,
+      // bukan dibulatkan sendiri-sendiri dari dua nilai pecahan yang beda titik pembulatannya.
+      const durSec = Math.round(dur);
+      const posSec = Math.min(durSec, Math.round(pos));
+      timeElapsed.textContent = fmtTime(posSec);
+      timeRemaining.textContent = '-' + fmtTime(durSec - posSec);
       progressFill.setAttribute('width', dur > 0 ? ((PROGRESS_BAR_WIDTH * pos) / dur).toFixed(2) : '0');
     }
     // Dipanggil tiap kali durasi audio yang sebenarnya berubah/diketahui (metadata audio ke-load).
