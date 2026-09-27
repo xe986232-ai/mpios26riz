@@ -229,7 +229,9 @@ function renderLayerNode(el: Element, depth: number): string {
   const cls = (el.getAttribute('class') || '').split(' ')[0];
   const label = el.id || cls || el.tagName.toLowerCase();
   const tag = el.tagName.toLowerCase();
-  const openClass = depth < 1 ? ' open' : '';
+  // Semua level auto-expand supaya elemen dalam (judul, durasi, volume bar, dll)
+  // langsung kelihatan sebagai layer tanpa perlu klik disclosure berkali-kali.
+  const openClass = ' open';
   const childrenHtml = childEls.length
     ? '<div class="layer-children">' + childEls.map((c) => renderLayerNode(c, depth + 1)).join('') + '</div>'
     : '';

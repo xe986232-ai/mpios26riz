@@ -239,7 +239,7 @@
   border-radius: 10px;
   background: #1f1f22;
   overflow: hidden;
-  max-height: 320px;
+  max-height: 460px;
   display: flex;
   flex-direction: column;
 }
