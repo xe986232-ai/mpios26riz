@@ -1171,6 +1171,34 @@ export default function App() {
     const MAX_EXPORT_DURATION_SEC = 600; // batas atas keamanan (10 menit), bukan lagi patokan utama durasi
     const FALLBACK_EXPORT_DURATION_SEC = 10; // dipakai HANYA kalau belum ada lagu yang di-upload sama sekali
 
+    // Cari config VideoEncoder yang didukung device/browser ini, nyoba beberapa kandidat H.264
+    // berurutan dari yang paling bagus ke yang paling kompatibel (bukan cuma pasang satu codec
+    // fixed) — pola ini dicontek dari referensi kamu (ios-music-player/lib/webcodecs-export.ts),
+    // yang terbukti export-nya aman di berbagai device. Banyak Chrome Android/WebView TIDAK
+    // mendukung hardware encoder High Profile (avc1.640028), makanya perlu fallback ke Main
+    // lalu Baseline Profile biar tetap bisa export walau kualitasnya sedikit turun.
+    async function findSupportedVideoConfig(width: number, height: number, fps: number): Promise<VideoEncoderConfig> {
+      // Bitrate ikut resolusi & fps (bukan angka fix), di-cap 6-40 Mbps.
+      const bitrate = Math.min(40_000_000, Math.max(6_000_000, Math.round(width * height * fps * 0.35)));
+      const candidates: VideoEncoderConfig[] = [
+        // avc1.640028 = High Profile Level 4.0 — paling tajam, tapi tidak semua device dukung.
+        { codec: 'avc1.640028', width, height, framerate: fps, bitrate, bitrateMode: 'variable', latencyMode: 'quality' },
+        // avc1.4d0028 = Main Profile Level 4.0 — fallback kedua.
+        { codec: 'avc1.4d0028', width, height, framerate: fps, bitrate, bitrateMode: 'variable', latencyMode: 'quality' },
+        // avc1.42001f = Baseline Profile Level 3.1 — fallback paling kompatibel, hampir semua device dukung.
+        { codec: 'avc1.42001f', width, height, framerate: fps, bitrate, bitrateMode: 'variable', latencyMode: 'quality' },
+      ];
+      for (const config of candidates) {
+        try {
+          const support = await VideoEncoder.isConfigSupported(config);
+          if (support.supported) return support.config ?? config;
+        } catch {
+          // lanjut coba kandidat berikutnya
+        }
+      }
+      throw new Error('Tidak ada konfigurasi VideoEncoder (H.264) yang didukung browser ini.');
+    }
+
     on(exportVideoBtn, 'click', async (e: Event) => {
       e.stopPropagation();
       // Durasi export sekarang ikut durasi lagu yang di-upload (songDuration), bukan hardcode lagi.
@@ -1189,29 +1217,18 @@ export default function App() {
       const totalFrames = Math.round(durationSec * VIDEO_FPS);
       const frameDurationUs = Math.round(1_000_000 / VIDEO_FPS);
 
-      // Cek dukungan config encoder DULU sebelum mulai render apa pun, supaya kalau memang codec/resolusi
-      // ini tidak didukung device/browser, errornya jelas dari awal — bukan nyangkut di tengah render
-      // ribuan frame lalu berakhir dengan pesan generic "Gagal export video".
-      const desiredConfig: VideoEncoderConfig = {
-        codec: 'avc1.640028',
-        width: EXPORT_W,
-        height: EXPORT_H,
-        bitrate: 8_000_000,
-        framerate: VIDEO_FPS,
-        hardwareAcceleration: 'prefer-hardware',
-      };
+      // Cek dukungan config encoder DULU sebelum mulai render apa pun, nyoba beberapa kandidat
+      // codec (bukan cuma satu), supaya kalau device ini tidak dukung High Profile, otomatis
+      // jatuh ke Main/Baseline Profile alih-alih langsung gagal total.
+      let desiredConfig: VideoEncoderConfig;
       try {
-        const support = await VideoEncoder.isConfigSupported(desiredConfig);
-        if (!support.supported) {
-          alert(
-            `Browser/device ini tidak mendukung konfigurasi video ${EXPORT_W}x${EXPORT_H} dengan codec ${desiredConfig.codec}. ` +
-              'Coba pakai Chrome/Edge terbaru di desktop.'
-          );
-          return;
-        }
+        desiredConfig = await findSupportedVideoConfig(EXPORT_W, EXPORT_H, VIDEO_FPS);
       } catch (err) {
         console.error('Gagal cek dukungan VideoEncoder:', err);
-        alert('Gagal memeriksa dukungan encoder video di browser ini. Coba pakai Chrome/Edge versi terbaru.');
+        const detail = err instanceof Error ? err.message : String(err);
+        alert(
+          `Browser/device ini tidak mendukung konfigurasi video ${EXPORT_W}x${EXPORT_H} dengan codec apa pun yang dicoba.\n\nDetail: ${detail}\n\nCoba pakai Chrome/Edge terbaru.`
+        );
         return;
       }
 
