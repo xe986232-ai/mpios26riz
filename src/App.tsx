@@ -280,21 +280,31 @@ export default function App() {
     };
     if (audioCard) on(audioCard, 'click', openHandler);
 
-    // ==== Auto-buka Music Player sendiri ~3 detik setelah halaman dimuat ====
-    // Simulasi "ketekan" kartu audio kanan atas (pointerdown -> pointerup -> click)
-    // biar animasi tombol-nya kerasa beneran ditekan, bukan cuma state 'open' loncat tiba-tiba.
+    // ==== Auto-buka Music Player sendiri ~3 detik SETELAH tombol play di kartu widget
+    // (Control Center kanan atas) dipencet — bukan otomatis pas halaman dimuat lagi.
+    // Kalau audio-nya di-pause/berhenti sebelum 3 detik, timer dibatalin (harus di-play ulang).
     let autoOpenTimer: number | undefined;
-    if (audioCard) {
+    const scheduleAutoOpen = () => {
+      if (!audioCard || autoOpenTimer !== undefined) return; // udah ada antrean jalan
       autoOpenTimer = window.setTimeout(() => {
+        autoOpenTimer = undefined;
         if (stage.classList.contains('open')) return; // udah kebuka manual duluan, skip
+        // Simulasi "ketekan" kartu audio (pointerdown -> pointerup -> click) biar animasi
+        // tombol-nya kerasa beneran ditekan, bukan cuma state 'open' loncat tiba-tiba.
         audioCard.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         window.setTimeout(() => {
           audioCard.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
           audioCard.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
         }, 130);
       }, 3000);
-      cleanupFns.push(() => window.clearTimeout(autoOpenTimer));
-    }
+    };
+    const cancelAutoOpen = () => {
+      if (autoOpenTimer !== undefined) {
+        window.clearTimeout(autoOpenTimer);
+        autoOpenTimer = undefined;
+      }
+    };
+    cleanupFns.push(cancelAutoOpen);
 
     const stageCloseHandler = () => {
       if (stage.classList.contains('open')) {
@@ -1065,7 +1075,15 @@ export default function App() {
     });
     on(widgetPlayPauseHit, 'click', (e: Event) => {
       e.stopPropagation(); // jangan sampai membuka Music Player, cuma toggle play/pause
+      const wasPaused = audioPreviewEl.paused;
       requestTogglePlayback();
+      if (wasPaused && !audioPreviewEl.paused) {
+        // baru mulai play dari kartu widget ini -> mulai hitung mundur auto-buka Music Player
+        scheduleAutoOpen();
+      } else if (!wasPaused) {
+        // barusan di-pause dari sini -> batalin antrean auto-buka kalau masih nunggu
+        cancelAutoOpen();
+      }
     });
     on(audioPreviewEl, 'play', () => {
       setPlayIconState(true);
@@ -1076,10 +1094,12 @@ export default function App() {
       setPlayIconState(false);
       reflectPlayingState(false);
       stopPlayheadLoop();
+      cancelAutoOpen(); // audio berhenti -> logic auto-buka ikut dibatalin
     });
     on(audioPreviewEl, 'ended', () => {
       setPlayIconState(false);
       stopPlayheadLoop();
+      cancelAutoOpen(); // audio abis -> logic auto-buka ikut dibatalin
       renderWaveformCanvas(0);
       elapsed = songDuration;
       renderDuration();
