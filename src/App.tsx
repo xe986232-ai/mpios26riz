@@ -1201,25 +1201,10 @@ export default function App() {
       });
     }
 
-    // ==== Optimasi Export Video: #cc statis sepanjang satu proses export (isOpen dikunci sebelum
-    // loop mulai, tidak pernah berubah lagi di dalamnya) → cukup di-rasterize SEKALI, dipakai ulang
-    // tiap frame. #player TIDAK ikut di-cache/di-pecah (base+overlay) lagi — pendekatan itu sempat
-    // dicoba tapi bikin hasil render jadi putih polos di device asli (kemungkinan besar gara-gara
-    // cascade CSS pada elemen SVG yang di-hide satu-satu berlaku beda dari yang diharapkan di
-    // browser sungguhan, sesuatu yang gak ketauan dari sini karena gak ada browser buat ngetes
-    // langsung). #player tetap full-render tiap frame kayak semula — supaya export dijamin BENAR
-    // dulu, baru nanti dioptimasi lagi lebih hati-hati (diuji bertahap) kalau CC-caching aja belum
-    // cukup cepet. Export Frame (single-shot) tidak kepengaruh sama sekali oleh cache ini.
-    type StageRenderCache = {
-      ccCanvas: HTMLCanvasElement | null;
-    };
-
     // Capture SATU frame kanvas (state DOM saat fungsi ini dipanggil) → canvas EXPORT_W x EXPORT_H.
     // Dipakai baik oleh Export Frame maupun Export Video (dipanggil berulang per frame, dengan
     // state — elapsed, dll — sudah di-advance manual sebelum tiap panggilan).
-    // `cache` opsional: kalau diisi (dipakai Export Video), #cc di-reuse dari rasterize sebelumnya
-    // alih-alih di-rasterize ulang tiap panggilan.
-    async function captureStageCanvas(cache?: StageRenderCache): Promise<HTMLCanvasElement> {
+    async function captureStageCanvas(): Promise<HTMLCanvasElement> {
       const rect = stageFrame.getBoundingClientRect();
       // Guard: kalau .stage-frame lagi berukuran 0 (misal ke-trigger saat belum ke-render/tersembunyi),
       // scale bakal jadi Infinity/NaN dan bikin canvas.width = Infinity → browser throw IndexSizeError
@@ -1242,31 +1227,21 @@ export default function App() {
       const playerRect = playerWrapEl.getBoundingClientRect();
       const playerOpacity = parseFloat(getComputedStyle(playerWrapEl).opacity || '1');
 
+      const ccClone = ccSvgEl.cloneNode(true) as SVGSVGElement;
+      bakeCcOpenDimming(ccClone, isOpen);
+      ccClone.querySelectorAll('rect.phone-frame').forEach((r) => r.setAttribute('display', 'none'));
+
       const outCcW = Math.max(1, Math.round(ccRect.width * scale));
       const outCcH = Math.max(1, Math.round(ccRect.height * scale));
-
-      // #cc statis sepanjang satu export (lihat catatan di atas) → kalau cache ada isinya, reuse
-      // langsung, skip rasterize sama sekali.
-      let ccCanvas: HTMLCanvasElement;
-      if (cache && cache.ccCanvas) {
-        ccCanvas = cache.ccCanvas;
-      } else {
-        const ccClone = ccSvgEl.cloneNode(true) as SVGSVGElement;
-        bakeCcOpenDimming(ccClone, isOpen);
-        ccClone.querySelectorAll('rect.phone-frame').forEach((r) => r.setAttribute('display', 'none'));
-        ccCanvas = await rasterizeNode(ccClone, 450, 920, outCcW / 450);
-        if (cache) cache.ccCanvas = ccCanvas;
-      }
+      const ccCanvas = await rasterizeNode(ccClone, 450, 920, outCcW / 450);
 
       let playerCanvas: HTMLCanvasElement | null = null;
       let outPlayerW = 0;
       let outPlayerH = 0;
       if (playerOpacity > 0.003) {
+        const playerClone = playerSvgEl.cloneNode(true) as SVGSVGElement;
         outPlayerW = Math.max(1, Math.round(playerRect.width * scale));
         outPlayerH = Math.max(1, Math.round(playerRect.height * scale));
-        // #player full-render tiap frame seperti semula (lihat catatan di atas captureStageCanvas
-        // soal kenapa base+overlay splitting untuk #player di-rollback).
-        const playerClone = playerSvgEl.cloneNode(true) as SVGSVGElement;
         playerCanvas = await rasterizeNode(playerClone, 336, 600, outPlayerW / 336);
       }
 
@@ -1497,13 +1472,6 @@ export default function App() {
       });
       encoder.configure(desiredConfig);
 
-      // Cache baru per proses export — #cc di-rasterize sekali di frame pertama, dipakai ulang
-      // di 599 frame sisanya (lihat captureStageCanvas di atas). #player sengaja TIDAK di-cache
-      // dulu (lihat catatan di captureStageCanvas).
-      const renderCache: StageRenderCache = {
-        ccCanvas: null,
-      };
-
       try {
         for (let i = 0; i < totalFrames; i++) {
           // ==== 1. Advance state manual (deterministik) — elapsed timer & posisi video wallpaper ====
@@ -1516,9 +1484,9 @@ export default function App() {
             await seekVideoTo(wallpaperVideoEl, t);
           }
 
-          // ==== 2. Capture frame kanvas (reuse pipeline yang sama dengan Export Frame, tapi #cc &
-          // bagian statis #player di-reuse dari renderCache — lihat captureStageCanvas di atas) ====
-          const canvas = await captureStageCanvas(renderCache);
+          // ==== 2. Capture frame kanvas (reuse pipeline yang sama dengan Export Frame, tapi clone DOM-nya
+          // dipakai ULANG lintas semua frame — reuseClone=true) ====
+          const canvas = await captureStageCanvas();
 
           // ==== 3. Encode frame ====
           const frame = new VideoFrame(canvas, {
