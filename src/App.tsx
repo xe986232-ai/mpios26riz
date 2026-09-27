@@ -751,7 +751,12 @@ export default function App() {
     const removeBgBtn = $<HTMLElement>('removeBgBtn');
     const ctrlBgZoom = $<HTMLInputElement>('ctrlBgZoom');
     const valBgZoom = $('valBgZoom');
+    const ctrlBgBlur = $<HTMLInputElement>('ctrlBgBlur');
+    const valBgBlur = $('valBgBlur');
+    const ctrlBgOpacity = $<HTMLInputElement>('ctrlBgOpacity');
+    const valBgOpacity = $('valBgOpacity');
     const bgImageEl = $<SVGImageElement>('image0_2570_20912');
+    const bgBlurStd = $<SVGFEGaussianBlurElement>('bgBlurStd');
     // Ukuran frame HP (dari markup): 450 x 920 — dipakai buat ngitung ulang posisi image pas di-zoom.
     const BG_FRAME_W = 450;
     const BG_FRAME_H = 920;
@@ -780,6 +785,19 @@ export default function App() {
       valBgZoom.textContent = ctrlBgZoom.value + '%';
     }
 
+    // Blur background pakai <feGaussianBlur> yang nempel di <image>-nya lewat filter="url(#bgBlurFilter)".
+    function applyBgBlur() {
+      bgBlurStd.setAttribute('stdDeviation', ctrlBgBlur.value);
+      valBgBlur.textContent = ctrlBgBlur.value + 'px';
+    }
+
+    // Opacity background — 0% = polos hitam (fill .phone-frame), 100% = gambar full kelihatan.
+    function applyBgOpacity() {
+      const opacity = Number(ctrlBgOpacity.value) / 100;
+      bgImageEl.setAttribute('opacity', String(opacity));
+      valBgOpacity.textContent = ctrlBgOpacity.value + '%';
+    }
+
     on(uploadBgBtn, 'click', (e: Event) => {
       e.stopPropagation();
       ctrlBgImage.click();
@@ -802,7 +820,14 @@ export default function App() {
     });
     on(ctrlBgZoom, 'input', applyBgZoom);
     on(ctrlBgZoom, 'click', (e: Event) => e.stopPropagation());
+    on(ctrlBgBlur, 'input', applyBgBlur);
+    on(ctrlBgBlur, 'click', (e: Event) => e.stopPropagation());
+    on(ctrlBgOpacity, 'input', applyBgOpacity);
+    on(ctrlBgOpacity, 'click', (e: Event) => e.stopPropagation());
     applyBgZoom();
+    applyBgBlur();
+    applyBgOpacity();
+
 
     // ==== Upload gambar custom untuk album art ====
     const ctrlAlbumArt = $<HTMLInputElement>('ctrlAlbumArt');
@@ -891,7 +916,7 @@ export default function App() {
       stage?: { zoom: number; offsetY: number };
       song: { title: string; artist: string; font: string };
       albumArt: string | null;
-      bg?: { image: string | null; zoom: number };
+      bg?: { image: string | null; zoom: number; blur: number; opacity: number };
     };
 
     function collectSettings(): ExportedSettings {
@@ -926,6 +951,8 @@ export default function App() {
           // null berarti masih pakai wallpaper bawaan (belum di-custom)
           image: bgImageEl.getAttribute('href') === defaultBgHref ? null : bgImageEl.getAttribute('href'),
           zoom: Number(ctrlBgZoom.value),
+          blur: Number(ctrlBgBlur.value),
+          opacity: Number(ctrlBgOpacity.value),
         },
       };
     }
@@ -962,6 +989,10 @@ export default function App() {
       }
       ctrlBgZoom.value = String(data.bg?.zoom ?? 100);
       applyBgZoom();
+      ctrlBgBlur.value = String(data.bg?.blur ?? 0);
+      applyBgBlur();
+      ctrlBgOpacity.value = String(data.bg?.opacity ?? 100);
+      applyBgOpacity();
 
       applyCardStyle();
       applyAlbumArtStyle();
@@ -2009,6 +2040,20 @@ export default function App() {
               <span id="valBgZoom" style={{ color: '#0a84ff', fontVariantNumeric: 'tabular-nums', fontSize: 13 }}>100%</span>
             </div>
             <input type="range" id="ctrlBgZoom" min="30" max="200" step="1" defaultValue="100" style={{ width: '100%' }} />
+          </div>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <label htmlFor="ctrlBgBlur" style={{ fontSize: 13, color: '#d1d1d6' }}>Blur Background</label>
+              <span id="valBgBlur" style={{ color: '#0a84ff', fontVariantNumeric: 'tabular-nums', fontSize: 13 }}>0px</span>
+            </div>
+            <input type="range" id="ctrlBgBlur" min="0" max="30" step="1" defaultValue="0" style={{ width: '100%' }} />
+          </div>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <label htmlFor="ctrlBgOpacity" style={{ fontSize: 13, color: '#d1d1d6' }}>Opacity Background</label>
+              <span id="valBgOpacity" style={{ color: '#0a84ff', fontVariantNumeric: 'tabular-nums', fontSize: 13 }}>100%</span>
+            </div>
+            <input type="range" id="ctrlBgOpacity" min="0" max="100" step="1" defaultValue="100" style={{ width: '100%' }} />
           </div>
         </div>
         <div className="album-art-upload-wrap" id="albumArtUploadWrap">
