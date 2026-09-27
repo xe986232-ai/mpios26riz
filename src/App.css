@@ -103,11 +103,15 @@
   .player {
     position: absolute; left: 5.33%; top: 10.98%;
     width: var(--card-w, 89.33%); height: var(--card-h, 78.04%);
-    opacity: 0; pointer-events: none; transform: scale(.72);
-    transition: opacity .45s ease, transform .45s ease, width .25s ease, height .25s ease;
+    opacity: 0; pointer-events: none;
+    transform-origin: center center;
+    /* transform TIDAK ditransisikan di sini — dikontrol manual lewat JS (morph "container
+       transform" dari kartu Control Center ke Music Player, lihat getCardMorphDelta di App.tsx).
+       width/height tetep boleh transisi normal buat slider Customize (ctrlWidth/ctrlHeight). */
+    transition: opacity .3s ease, width .25s ease, height .25s ease;
   }
   .player svg { width: 100%; height: 100%; display: block; }
-  .stage.open .player { opacity: 1; pointer-events: auto; transform: scale(.78); }
+  .stage.open .player { opacity: 1; pointer-events: auto; }
   /* ==== Panel kustomisasi kartu music player ==== */
   .control-panel {
     width: 280px; flex-shrink: 0; color: #f2f2f7;

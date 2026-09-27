@@ -223,7 +223,44 @@ export default function App() {
     // (scheduleAutoOpen di bawah) MAUPUN buat nyamain animasi yang sama pas Export Video
     // (exportVideo, karena loop render-nya deterministik/virtual-time, bukan wall-clock).
     const AUTO_OPEN_DELAY_MS = 3000;
-    const AUTO_OPEN_TRANSITION_SEC = 0.45; // samain sama `transition: opacity .45s ease` di .player (App.css)
+    const AUTO_OPEN_TRANSITION_SEC = 0.48; // samain sama MORPH_DURATION_MS di bawah
+
+    // ==== "Container transform": kartu audio di Control Center seolah-olah MELEBAR jadi
+    // Music Player (bukan cuma fade+pop biasa). Teknik: FLIP (First-Last-Invert-Play).
+    //   1) First  -> ukur rect kartu yang diklik (kecil).
+    //   2) Last   -> ukur rect target #player (ukuran penuh, sesuai --card-w/--card-h saat ini).
+    //   3) Invert -> pasang transform di #player biar visualnya PAS nutupin posisi si kartu.
+    //   4) Play   -> lepas transform itu (transition ke translate(0)/scale(1)) -> browser
+    //                nge-animasiin dari kecil-di-posisi-kartu ke besar-di-posisi-asli player.
+    // Delta yang sama juga dipakai buat animasi balik (nutup) & buat drive manual di exportVideo
+    // supaya video hasil export ikut morph yang sama persis.
+    const MORPH_DURATION_MS = 480;
+    const MORPH_EASE = 'cubic-bezier(.22,1,.36,1)';
+
+    const getCardMorphDelta = (fromEl: Element, toEl: HTMLElement) => {
+      const prevTransform = toEl.style.transform;
+      toEl.style.transform = 'none'; // ukur rect "natural" #player, lepas dari transform yg lagi jalan
+      const fromRect = fromEl.getBoundingClientRect();
+      const toRect = toEl.getBoundingClientRect();
+      toEl.style.transform = prevTransform;
+      return {
+        dx: fromRect.left + fromRect.width / 2 - (toRect.left + toRect.width / 2),
+        dy: fromRect.top + fromRect.height / 2 - (toRect.top + toRect.height / 2),
+        scaleX: toRect.width > 0 ? fromRect.width / toRect.width : 1,
+        scaleY: toRect.height > 0 ? fromRect.height / toRect.height : 1,
+      };
+    };
+
+    // Listener transitionend player yang lagi aktif (open ATAU close) — dilacak biar kalau
+    // user toggle cepet (buka-tutup-buka), listener lama gak nyangkut & ganggu animasi baru.
+    let activeMorphEndHandler: ((ev: TransitionEvent) => void) | null = null;
+    const clearActiveMorphHandler = () => {
+      if (activeMorphEndHandler) {
+        playerWrapEl.removeEventListener('transitionend', activeMorphEndHandler);
+        activeMorphEndHandler = null;
+      }
+    };
+    cleanupFns.push(clearActiveMorphHandler);
 
     const cleanupFns: Array<() => void> = [];
     const on = <K extends keyof HTMLElementEventMap>(
@@ -282,7 +319,31 @@ export default function App() {
 
     const openHandler = (e: Event) => {
       e.stopPropagation();
-      stage.classList.add('open');
+      if (stage.classList.contains('open') || !audioCard) return;
+      clearActiveMorphHandler();
+
+      stage.classList.add('open'); // set state akhir dulu (opacity:1, pointer-events, dst)
+      const { dx, dy, scaleX, scaleY } = getCardMorphDelta(audioCard, playerWrapEl);
+
+      // Invert: taruh player PAS di posisi & ukuran kartu (kecil) dulu, tanpa transisi...
+      playerWrapEl.style.transition = 'none';
+      playerWrapEl.style.transform = `translate(${dx}px, ${dy}px) scale(${scaleX}, ${scaleY})`;
+      playerWrapEl.style.opacity = '1';
+      void playerWrapEl.offsetWidth; // force reflow biar transform di atas ke-apply dulu
+
+      // ...baru animasiin balik ke posisi & ukuran aslinya -> kerasa "melebar" dari kartu.
+      playerWrapEl.style.transition = `transform ${MORPH_DURATION_MS}ms ${MORPH_EASE}`;
+      playerWrapEl.style.transform = 'translate(0px, 0px) scale(1, 1)';
+
+      const onMorphEnd = (ev: TransitionEvent) => {
+        if (ev.target !== playerWrapEl || ev.propertyName !== 'transform') return;
+        playerWrapEl.style.transition = '';
+        playerWrapEl.style.transform = '';
+        clearActiveMorphHandler();
+      };
+      activeMorphEndHandler = onMorphEnd;
+      playerWrapEl.addEventListener('transitionend', onMorphEnd);
+
       hint.textContent = 'Klik di mana saja untuk kembali ke Control Center';
     };
     if (audioCard) on(audioCard, 'click', openHandler);
@@ -314,10 +375,42 @@ export default function App() {
     cleanupFns.push(cancelAutoOpen);
 
     const stageCloseHandler = () => {
-      if (stage.classList.contains('open')) {
+      if (!stage.classList.contains('open')) return;
+      clearActiveMorphHandler();
+
+      if (!audioCard) {
+        // Fallback tanpa morph (harusnya gak kejadian, audioCard selalu ada di markup)
         stage.classList.remove('open');
         hint.textContent = 'Klik kartu audio kanan atas untuk membuka Music Player';
+        return;
       }
+
+      const { dx, dy, scaleX, scaleY } = getCardMorphDelta(audioCard, playerWrapEl);
+
+      // Pastiin mulai dari ukuran penuh (translate(0) scale(1)) tanpa transisi dulu...
+      playerWrapEl.style.transition = 'none';
+      playerWrapEl.style.transform = 'translate(0px, 0px) scale(1, 1)';
+      playerWrapEl.style.opacity = '1';
+      void playerWrapEl.offsetWidth; // force reflow
+
+      // Lepas class 'open' bareng-bareng biar Control Center & overlay ikut fade balik,
+      // sementara player-nya sendiri kita animasiin manual (mengecil ke posisi kartu).
+      stage.classList.remove('open');
+      hint.textContent = 'Klik kartu audio kanan atas untuk membuka Music Player';
+
+      playerWrapEl.style.transition = `transform ${MORPH_DURATION_MS}ms ${MORPH_EASE}, opacity ${MORPH_DURATION_MS}ms ease`;
+      playerWrapEl.style.transform = `translate(${dx}px, ${dy}px) scale(${scaleX}, ${scaleY})`;
+      playerWrapEl.style.opacity = '0';
+
+      const onMorphEnd = (ev: TransitionEvent) => {
+        if (ev.target !== playerWrapEl || ev.propertyName !== 'opacity') return;
+        playerWrapEl.style.transition = '';
+        playerWrapEl.style.transform = '';
+        playerWrapEl.style.opacity = '';
+        clearActiveMorphHandler();
+      };
+      activeMorphEndHandler = onMorphEnd;
+      playerWrapEl.addEventListener('transitionend', onMorphEnd);
     };
     on(stage, 'click', stageCloseHandler);
 
@@ -1533,6 +1626,11 @@ export default function App() {
       const totalFrames = Math.round(durationSec * VIDEO_FPS);
       const frameDurationUs = Math.round(1_000_000 / VIDEO_FPS);
 
+      // Delta morph kartu->player dihitung SEKALI di sini (bukan per-frame, biar hemat &
+      // konsisten) — dipakai buat drive manual animasi "container transform" yang sama kayak
+      // interaksi live (lihat getCardMorphDelta & openHandler di atas).
+      const exportMorphDelta = audioCard ? getCardMorphDelta(audioCard, playerWrapEl) : null;
+
       // Cek dukungan config encoder DULU sebelum mulai render apa pun, nyoba beberapa kandidat
       // codec (bukan cuma satu), supaya kalau device ini tidak dukung High Profile, otomatis
       // jatuh ke Main/Baseline Profile alih-alih langsung gagal total.
@@ -1635,10 +1733,20 @@ export default function App() {
           const tSec = i / VIDEO_FPS;
           const rawProgress = (tSec - AUTO_OPEN_DELAY_MS / 1000) / AUTO_OPEN_TRANSITION_SEC;
           const openProgress = Math.min(1, Math.max(0, rawProgress));
-          // Easing kasar mirip `ease` CSS (ease-out) biar gerakannya nggak linear kaku
-          const eased = 1 - Math.pow(1 - openProgress, 2);
+          // Easing kasar mirip cubic-bezier(.22,1,.36,1) (ease-out tajam) biar gerakannya nggak linear kaku
+          const eased = 1 - Math.pow(1 - openProgress, 3);
           playerWrapEl.style.opacity = String(eased);
-          playerWrapEl.style.transform = `scale(${(0.72 + (0.78 - 0.72) * eased).toFixed(4)})`;
+          if (exportMorphDelta) {
+            // Sama persis kayak morph live: interpolasi dari (translate=delta, scale=kartu)
+            // di eased=0 menuju (translate=0, scale=1) di eased=1 -> kerasa "melebar dari kartu".
+            const dx = exportMorphDelta.dx * (1 - eased);
+            const dy = exportMorphDelta.dy * (1 - eased);
+            const sx = exportMorphDelta.scaleX + (1 - exportMorphDelta.scaleX) * eased;
+            const sy = exportMorphDelta.scaleY + (1 - exportMorphDelta.scaleY) * eased;
+            playerWrapEl.style.transform = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px) scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`;
+          } else {
+            playerWrapEl.style.transform = 'none';
+          }
 
           // ==== 1c. Ikon play/pause (Control Center & Music Player) — video export ini dianggap
           // audio-nya "main" dari detik 0 (makanya di-encode ke video), jadi ikon pause yang tampil
