@@ -27,6 +27,8 @@ function captureVideoFrame(video: HTMLVideoElement, targetW: number, targetH: nu
   const dh = vh * scale;
   const dx = (targetW - dw) / 2;
   const dy = (targetH - dh) / 2;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(video, dx, dy, dw, dh);
   return canvas.toDataURL('image/png');
 }
@@ -54,6 +56,8 @@ function blurAndDim(
         if (!pctx) throw new Error('Canvas context tidak tersedia');
         // extend-edge murah: gambar sumber diregangkan menutupi area padding juga,
         // nanti area padding ini dibuang lagi setelah di-blur.
+        pctx.imageSmoothingEnabled = true;
+        pctx.imageSmoothingQuality = 'high';
         pctx.drawImage(img, -pad, -pad, w + pad * 2, h + pad * 2);
 
         const out = document.createElement('canvas');
@@ -61,6 +65,8 @@ function blurAndDim(
         out.height = h;
         const octx = out.getContext('2d');
         if (!octx) throw new Error('Canvas context tidak tersedia');
+        octx.imageSmoothingEnabled = true;
+        octx.imageSmoothingQuality = 'high';
         octx.filter = `blur(${blurPx}px)`;
         octx.drawImage(padded, -pad, -pad);
         octx.filter = 'none';
@@ -192,6 +198,8 @@ async function rasterizeNode(
     canvas.height = outH;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas context tidak tersedia');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, 0, 0, outW, outH);
     return canvas;
   } finally {
@@ -1324,7 +1332,15 @@ export default function App() {
       const wy = Number(videoFO?.getAttribute('y') ?? 23);
       const ww = Number(videoFO?.getAttribute('width') ?? 402);
       const wh = Number(videoFO?.getAttribute('height') ?? 874);
-      const CAPTURE_SCALE = 1.8; // resolusi capture wallpaper, independen dari skala export akhir — diturunkan dari 2.5 biar lebih ringan per frame saat export video (kualitas akhir tetap dikunci di EXPORT_W x EXPORT_H)
+      // resolusi capture wallpaper (freeze-frame video + backdrop blur) sebelum di-bake ke SVG.
+      // - Export Video (reuseClone=true, dipanggil ratusan kali per render): dikunci rendah (1.8x) demi performa,
+      //   nggak dipedulikan kualitasnya di sini sesuai request.
+      // - Export Frame (reuseClone=false, cuma sekali panggil): sebelumnya IKUT kepukul rendah 1.8x padahal
+      //   ini akar masalah hasil burik — wallpaper & blur di-bake kecil lalu di-upscale ke 1080x1920, jadi pecah.
+      //   Sekarang disamakan/dilebihkan dari skala output akhir (`scale` = EXPORT_H/rect.height, biasanya 2-4x
+      //   tergantung ukuran layar) + sedikit headroom, supaya nggak ada upscale sama sekali di layer ini —
+      //   sama seperti pendekatan Export Assets (CAPTURE_SCALE=2.5) tapi otomatis menyesuaikan skala target.
+      const CAPTURE_SCALE = reuseClone ? 1.8 : Math.max(scale * 1.25, 3);
       const cw = Math.round(ww * CAPTURE_SCALE);
       const ch = Math.round(wh * CAPTURE_SCALE);
 
@@ -1369,6 +1385,8 @@ export default function App() {
         out.height = EXPORT_H;
         const outCtx = out.getContext('2d');
         if (!outCtx) throw new Error('Canvas context tidak tersedia');
+        outCtx.imageSmoothingEnabled = true;
+        outCtx.imageSmoothingQuality = 'high';
         outCtx.drawImage(captured, 0, 0, captured.width, captured.height, 0, 0, EXPORT_W, EXPORT_H);
         return out;
       } finally {
