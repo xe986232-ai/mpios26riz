@@ -1390,7 +1390,6 @@ export default function App() {
       // baik itu dari toggle manual (0/1 penuh) maupun dari nilai antara yang di-drive manual
       // per-frame sama exportVideo (biar transisinya kerasa fade bareng, bukan potongan kasar).
       bakeCcOpenDimming(ccClone, playerOpacity);
-      ccClone.querySelectorAll('rect.phone-frame').forEach((r) => r.setAttribute('display', 'none'));
 
       const outCcW = Math.max(1, Math.round(ccRect.width * scale));
       const outCcH = Math.max(1, Math.round(ccRect.height * scale));
