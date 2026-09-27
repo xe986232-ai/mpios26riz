@@ -12,75 +12,10 @@ import { STAGE_MARKUP, PANELS_MARKUP } from './markup';
 // sekarang lewat renderer SVG asli browser (lihat rasterizeNode di bawah), bukan lewat
 // interpreter CSS buatan pihak ketiga.
 
-// Ambil frame video yang sedang tampil saat ini, ditempatkan ke kotak targetW x targetH
-// dengan logika object-fit: cover (sama seperti CSS video wallpaper aslinya).
-function captureVideoFrame(video: HTMLVideoElement, targetW: number, targetH: number): string {
-  const canvas = document.createElement('canvas');
-  canvas.width = targetW;
-  canvas.height = targetH;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Canvas context tidak tersedia');
-  const vw = video.videoWidth || targetW;
-  const vh = video.videoHeight || targetH;
-  const scale = Math.max(targetW / vw, targetH / vh); // cover
-  const dw = vw * scale;
-  const dh = vh * scale;
-  const dx = (targetW - dw) / 2;
-  const dy = (targetH - dh) / 2;
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(video, dx, dy, dw, dh);
-  return canvas.toDataURL('image/png');
-}
-
-// Blur + dim manual pakai Canvas 2D filter (didukung browser modern), meniru
-// backdrop-filter: blur(...) + overlay hitam semi-transparan. Gambar sumber di-extend
-// dulu ke kanvas yang dipadding sebelum di-blur, supaya tepi hasil blur tidak jadi
-// gelap/pudar (efek umum kalau blur langsung mepet ke tepi kanvas).
-function blurAndDim(
-  srcDataUrl: string,
-  w: number,
-  h: number,
-  blurPx: number,
-  dimAlpha: number
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const pad = Math.ceil(blurPx * 2.5);
-        const padded = document.createElement('canvas');
-        padded.width = w + pad * 2;
-        padded.height = h + pad * 2;
-        const pctx = padded.getContext('2d');
-        if (!pctx) throw new Error('Canvas context tidak tersedia');
-        // extend-edge murah: gambar sumber diregangkan menutupi area padding juga,
-        // nanti area padding ini dibuang lagi setelah di-blur.
-        pctx.imageSmoothingEnabled = true;
-        pctx.imageSmoothingQuality = 'high';
-        pctx.drawImage(img, -pad, -pad, w + pad * 2, h + pad * 2);
-
-        const out = document.createElement('canvas');
-        out.width = w;
-        out.height = h;
-        const octx = out.getContext('2d');
-        if (!octx) throw new Error('Canvas context tidak tersedia');
-        octx.imageSmoothingEnabled = true;
-        octx.imageSmoothingQuality = 'high';
-        octx.filter = `blur(${blurPx}px)`;
-        octx.drawImage(padded, -pad, -pad);
-        octx.filter = 'none';
-        octx.fillStyle = `rgba(0,0,0,${dimAlpha})`;
-        octx.fillRect(0, 0, w, h);
-        resolve(out.toDataURL('image/png'));
-      } catch (err) {
-        reject(err);
-      }
-    };
-    img.onerror = () => reject(new Error('Gagal memuat gambar untuk diblur'));
-    img.src = srcDataUrl;
-  });
-}
+// (captureVideoFrame & blurAndDim — dulu dipakai buat bekukan wallpaper video + backdrop-blur
+// jadi gambar statis sebelum di-rasterisasi — sudah dihapus, karena elemen wallpaper-video &
+// backdrop-filter-nya sendiri sudah dihapus total dari markup di komit sebelumnya, jadi kedua
+// fungsi ini sudah jadi dead code.)
 
 // Seek <video> ke waktu tertentu dan tunggu sampai frame di waktu itu benar-benar siap digambar
 // (event 'seeked'), supaya tiap frame video yang di-capture akurat sesuai posisi yang diminta —
@@ -1209,6 +1144,24 @@ export default function App() {
     // Patokan export sekarang .stage-frame (kanvas yang tampak di layar, sudah terkunci rasio 9:16 lewat CSS),
     // BUKAN lagi area layar HP di dalam SVG (yang rasionya ~402:874, beda dari kanvas). Jadi apa yang kelihatan
     // di kanvas — termasuk ruang kosong letterbox kiri-kanan kalau ada — itulah yang ikut ke-export, 1:1.
+    //
+    // ==== KENAPA SEBELUMNYA SELALU GAGAL ("Tainted canvases may not be exported") ====
+    // Pendekatan lama membungkus .stage-frame (elemen <div> biasa) lewat <foreignObject> di dalam SVG
+    // supaya bisa dirender jadi satu <img>, lalu di-drawImage ke canvas. Chrome SENGAJA menandai
+    // ("taint") canvas apa pun yang sumbernya adalah SVG yang mengandung <foreignObject> — ini
+    // restriksi keamanan browser (bukan bug di kode ini) dan berlaku SELALU, walau isinya cuma
+    // data-URI same-origin. Begitu canvas ke-taint, canvas.toBlob()/toDataURL() PASTI dilempar
+    // SecurityError — persis pesan yang muncul. Makanya Export Frame nggak pernah benar-benar
+    // berhasil sejak awal, terlepas dari resolusi/kualitasnya.
+    //
+    // FIX: #cc dan #player masing-masing SUDAH berupa <svg> asli TANPA <foreignObject> di dalamnya
+    // (video wallpaper & backdrop-blur yang dulu pakai foreignObject sudah dihapus total dari markup).
+    // Jadi sekarang keduanya di-rasterisasi TERPISAH lewat rasterizeNode (cabang SVGSVGElement,
+    // tanpa dibungkus foreignObject sama sekali → tidak pernah ke-taint), lalu digabung manual di
+    // canvas 2D memakai geometri on-screen asli (getBoundingClientRect/getComputedStyle) supaya
+    // posisi, ukuran, dan opacity-nya identik dengan yang tampak di layar — termasuk transform
+    // scale(.78) & opacity saat Music Player "open" (getBoundingClientRect sudah otomatis
+    // memperhitungkan transform CSS, jadi tidak perlu dihitung ulang manual).
     const exportFrameBtn = $<HTMLButtonElement>('exportFrameBtn');
     const exportVideoBtn = $<HTMLButtonElement>('exportVideoBtn');
     const exportVideoProgressWrap = $('exportVideoProgressWrap');
@@ -1217,95 +1170,10 @@ export default function App() {
     const EXPORT_H = 1920; // tinggi target hasil export
     const EXPORT_W = 1080; // lebar target hasil export — dikunci 9:16, sama seperti .stage-frame
     const stageFrame = stage.parentElement as HTMLElement; // .stage-frame — elemen kanvas yang jadi acuan crop export
-    const wallpaperVideoEl = root.querySelector<HTMLVideoElement>('.wallpaper-video');
+    const wallpaperVideoEl = root.querySelector<HTMLVideoElement>('.wallpaper-video'); // sudah tidak ada di markup — dibiarkan null, dicek aman di bawah
 
-    // Capture SATU frame kanvas (state DOM saat fungsi ini dipanggil) → canvas EXPORT_W x EXPORT_H.
-    // Dipakai baik oleh Export Frame (sekali panggil) maupun Export Video (dipanggil berulang per frame,
-    // dengan state — elapsed, posisi video wallpaper, dll — sudah di-advance manual sebelum tiap panggilan).
-    // ==== Konteks clone yang dipakai ULANG lintas frame (dibuat SEKALI, bukan dibongkar-pasang tiap frame) ====
-    // Sebelumnya: setiap panggil captureStageCanvas(), seluruh .stage-frame di-clone ulang dari nol,
-    // ditempel ke document.body, lalu dihapus lagi — untuk video 1000 frame itu artinya clone+attach+detach
-    // DOM kompleks 1000 KALI. Sekarang clone-nya dibuat sekali (lewat setupExportClone) dan dipakai ulang;
-    // tiap frame cuma nge-update src gambar wallpaper/blur yang sudah ada, bukan bangun ulang DOM-nya.
-    type ExportCloneCtx = {
-      cloneWrap: HTMLDivElement;
-      frameClone: HTMLElement;
-      videoImgEl: HTMLImageElement | null;
-      backdropImgEl: HTMLImageElement | null;
-      afterImgEl: HTMLImageElement | null; // null kalau Music Player tidak sedang "open"
-    };
-    let exportCloneCtx: ExportCloneCtx | null = null;
-
-    function teardownExportClone() {
-      if (exportCloneCtx?.cloneWrap.parentNode) {
-        exportCloneCtx.cloneWrap.parentNode.removeChild(exportCloneCtx.cloneWrap);
-      }
-      exportCloneCtx = null;
-    }
-
-    function setupExportClone(rect: DOMRectReadOnly, wx: number, wy: number, ww: number, wh: number, isOpen: boolean): ExportCloneCtx {
-      const cloneWrap = document.createElement('div');
-      cloneWrap.className = 'export-frame-clone';
-      cloneWrap.style.cssText =
-        'position:fixed;left:-99999px;top:0;width:' + rect.width + 'px;height:' + rect.height + 'px;pointer-events:none;';
-
-      const frameClone = stageFrame.cloneNode(true) as HTMLElement;
-      const stageClone = (frameClone.querySelector<HTMLElement>('#stage') ?? frameClone) as HTMLElement;
-      stageClone.removeAttribute('id');
-      const styleOverride = document.createElement('style');
-      styleOverride.textContent =
-        '.export-frame-clone .stage::after { display: none !important; }' +
-        '.export-frame-clone .stage-frame { border-radius: 0 !important; }';
-      cloneWrap.appendChild(styleOverride);
-      cloneWrap.appendChild(frameClone);
-      document.body.appendChild(cloneWrap);
-
-      // Siapkan <img> persisten buat wallpaper video beku — src-nya di-update tiap frame, elemennya sendiri
-      // TIDAK dibuat ulang.
-      let videoImgEl: HTMLImageElement | null = null;
-      const cloneVideoEl = stageClone.querySelector<HTMLVideoElement>('.wallpaper-video');
-      const cloneVideoFO = cloneVideoEl?.closest('foreignObject');
-      if (cloneVideoFO) {
-        cloneVideoFO.innerHTML = '';
-        videoImgEl = document.createElementNS('http://www.w3.org/1999/xhtml', 'img') as unknown as HTMLImageElement;
-        videoImgEl.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
-        cloneVideoFO.appendChild(videoImgEl);
-      }
-
-      // Siapkan <img> persisten buat lapisan blur Control Center (backdrop-filter pengganti).
-      let backdropImgEl: HTMLImageElement | null = null;
-      const cloneBackdropDiv = stageClone.querySelector<HTMLElement>('foreignObject div[style*="backdrop-filter"]');
-      const backdropFO = cloneBackdropDiv?.closest('foreignObject');
-      if (backdropFO) {
-        backdropFO.setAttribute('x', String(wx));
-        backdropFO.setAttribute('y', String(wy));
-        backdropFO.setAttribute('width', String(ww));
-        backdropFO.setAttribute('height', String(wh));
-        backdropFO.innerHTML = '';
-        backdropImgEl = document.createElementNS('http://www.w3.org/1999/xhtml', 'img') as unknown as HTMLImageElement;
-        backdropImgEl.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
-        backdropFO.appendChild(backdropImgEl);
-      }
-
-      const flatTintPath = stageClone.querySelector('path[data-figma-bg-blur-radius]');
-      if (flatTintPath) flatTintPath.setAttribute('fill-opacity', '0');
-
-      // Lapisan dim+blur ekstra (Music Player "open") — statenya diasumsikan TETAP sepanjang satu sesi
-      // export (nggak toggle open/close di tengah render 1 video), jadi elemennya dibuat sekali di sini kalau perlu.
-      let afterImgEl: HTMLImageElement | null = null;
-      if (isOpen) {
-        const afterLayer = document.createElement('div');
-        afterLayer.style.cssText =
-          'position:absolute;left:5.33%;top:2.5%;width:89.33%;height:95%;z-index:1;pointer-events:none;overflow:hidden;border-radius:13.5%/6.2%;';
-        afterImgEl = document.createElement('img');
-        afterImgEl.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
-        afterLayer.appendChild(afterImgEl);
-        stageClone.appendChild(afterLayer);
-      }
-
-      return { cloneWrap, frameClone, videoImgEl, backdropImgEl, afterImgEl };
-    }
-
+    // Dipakai buat nunggu <img> yang src-nya baru di-set (freeze-frame wallpaper) selesai decode,
+    // dipakai di jalur Export Assets (captureComponentCanvas) di bawah.
     function waitImgLoaded(img: HTMLImageElement | null): Promise<void> {
       if (!img || !img.src) return Promise.resolve();
       if (img.complete) return Promise.resolve();
@@ -1315,11 +1183,28 @@ export default function App() {
       });
     }
 
+    // Bekukan status "dimming" tombol/kartu Control Center saat Music Player lagi kebuka, sesuai
+    // aturan CSS asli (.stage.open .cc svg > g[clip-path] > *:nth-child(n+3), dan
+    // .cc svg > rect:not(.phone-frame)) — di-bake jadi atribut opacity eksplisit di clone, karena
+    // clone yang dirender lewat rasterizeNode nanti berdiri sendiri (nggak lagi punya ancestor
+    // ".stage.open" buat dicocokkan selector CSS-nya).
+    function bakeCcOpenDimming(ccSvgClone: SVGSVGElement, isOpen: boolean) {
+      if (!isOpen) return; // default (closed) sudah opacity 1 apa adanya, tidak perlu diubah
+      const clipGroup = ccSvgClone.querySelector('g[clip-path]');
+      if (clipGroup) {
+        Array.from(clipGroup.children).forEach((child, idx) => {
+          if (idx >= 2) child.setAttribute('opacity', '0'); // nth-child(n+3), 0-based idx>=2
+        });
+      }
+      ccSvgClone.querySelectorAll('rect').forEach((r) => {
+        if (!r.classList.contains('phone-frame')) r.setAttribute('opacity', '0');
+      });
+    }
+
     // Capture SATU frame kanvas (state DOM saat fungsi ini dipanggil) → canvas EXPORT_W x EXPORT_H.
-    // Dipakai baik oleh Export Frame (sekali panggil, reuseClone=false → clone dibongkar lagi setelah selesai)
-    // maupun Export Video (dipanggil berulang per frame dengan reuseClone=true → clone dipakai ulang,
-    // caller yang bertanggung jawab manggil teardownExportClone() setelah loop selesai).
-    async function captureStageCanvas(reuseClone: boolean = false): Promise<HTMLCanvasElement> {
+    // Dipakai baik oleh Export Frame maupun Export Video (dipanggil berulang per frame, dengan
+    // state — elapsed, dll — sudah di-advance manual sebelum tiap panggilan).
+    async function captureStageCanvas(): Promise<HTMLCanvasElement> {
       const rect = stageFrame.getBoundingClientRect();
       // Guard: kalau .stage-frame lagi berukuran 0 (misal ke-trigger saat belum ke-render/tersembunyi),
       // scale bakal jadi Infinity/NaN dan bikin canvas.width = Infinity → browser throw IndexSizeError
@@ -1330,74 +1215,67 @@ export default function App() {
       // Render pada skala yang membuat tinggi kanvas pas 1920px; karena .stage-frame terkunci rasio 9:16
       // di CSS, lebarnya otomatis ikut pas ~1080px — hasil export jadi identik dengan kanvas di layar.
       const scale = EXPORT_H / rect.height;
-
-      // ==== 1. Bekukan frame video wallpaper saat ini + siapkan lapisan blur pengganti backdrop-filter ====
-      const videoEl = wallpaperVideoEl;
-      const videoFO = videoEl?.closest('foreignObject') || null;
-      const wx = Number(videoFO?.getAttribute('x') ?? 24);
-      const wy = Number(videoFO?.getAttribute('y') ?? 23);
-      const ww = Number(videoFO?.getAttribute('width') ?? 402);
-      const wh = Number(videoFO?.getAttribute('height') ?? 874);
-      // resolusi capture wallpaper (freeze-frame video + backdrop blur) sebelum di-bake ke SVG.
-      // - Export Video (reuseClone=true, dipanggil ratusan kali per render): dikunci rendah (1.8x) demi performa,
-      //   nggak dipedulikan kualitasnya di sini sesuai request.
-      // - Export Frame (reuseClone=false, cuma sekali panggil): sebelumnya IKUT kepukul rendah 1.8x padahal
-      //   ini akar masalah hasil burik — wallpaper & blur di-bake kecil lalu di-upscale ke 1080x1920, jadi pecah.
-      //   Sekarang disamakan/dilebihkan dari skala output akhir (`scale` = EXPORT_H/rect.height, biasanya 2-4x
-      //   tergantung ukuran layar) + sedikit headroom, supaya nggak ada upscale sama sekali di layer ini —
-      //   sama seperti pendekatan Export Assets (CAPTURE_SCALE=2.5) tapi otomatis menyesuaikan skala target.
-      const CAPTURE_SCALE = reuseClone ? 1.8 : Math.max(scale * 1.25, 3);
-      const cw = Math.round(ww * CAPTURE_SCALE);
-      const ch = Math.round(wh * CAPTURE_SCALE);
-
-      let rawWallpaperUrl: string | null = null;
-      let ccBlurUrl: string | null = null;
-      let openBlurUrl: string | null = null;
       const isOpen = stage.classList.contains('open');
 
-      if (videoEl && videoEl.readyState >= 2) {
-        rawWallpaperUrl = captureVideoFrame(videoEl, cw, ch);
-        ccBlurUrl = await blurAndDim(rawWallpaperUrl, cw, ch, 12 * CAPTURE_SCALE, 0.5);
-        if (isOpen) {
-          openBlurUrl = await blurAndDim(ccBlurUrl, cw, ch, 18 * CAPTURE_SCALE, 0.15);
-        }
+      const ccWrapEl = $<HTMLElement>('cc');
+      const playerWrapEl = $<HTMLElement>('player');
+      const ccSvgEl = ccWrapEl.querySelector<SVGSVGElement>('svg');
+      const playerSvgEl = playerWrapEl.querySelector<SVGSVGElement>('svg');
+      if (!ccSvgEl || !playerSvgEl) throw new Error('Elemen #cc/#player tidak ditemukan di kanvas.');
+
+      const ccRect = ccWrapEl.getBoundingClientRect();
+      const playerRect = playerWrapEl.getBoundingClientRect();
+      const playerOpacity = parseFloat(getComputedStyle(playerWrapEl).opacity || '1');
+
+      const ccClone = ccSvgEl.cloneNode(true) as SVGSVGElement;
+      bakeCcOpenDimming(ccClone, isOpen);
+      ccClone.querySelectorAll('rect.phone-frame').forEach((r) => r.setAttribute('display', 'none'));
+
+      const outCcW = Math.max(1, Math.round(ccRect.width * scale));
+      const outCcH = Math.max(1, Math.round(ccRect.height * scale));
+      const ccCanvas = await rasterizeNode(ccClone, 450, 920, outCcW / 450);
+
+      let playerCanvas: HTMLCanvasElement | null = null;
+      let outPlayerW = 0;
+      let outPlayerH = 0;
+      if (playerOpacity > 0.003) {
+        const playerClone = playerSvgEl.cloneNode(true) as SVGSVGElement;
+        outPlayerW = Math.max(1, Math.round(playerRect.width * scale));
+        outPlayerH = Math.max(1, Math.round(playerRect.height * scale));
+        playerCanvas = await rasterizeNode(playerClone, 336, 600, outPlayerW / 336);
       }
 
-      // ==== 2. Siapkan/pakai-ulang clone .stage-frame ====
-      if (!reuseClone) teardownExportClone(); // Export Frame: selalu mulai dari clone bersih
-      if (!exportCloneCtx) {
-        exportCloneCtx = setupExportClone(rect, wx, wy, ww, wh, isOpen);
+      const out = document.createElement('canvas');
+      out.width = EXPORT_W;
+      out.height = EXPORT_H;
+      const outCtx = out.getContext('2d');
+      if (!outCtx) throw new Error('Canvas context tidak tersedia');
+      outCtx.imageSmoothingEnabled = true;
+      outCtx.imageSmoothingQuality = 'high';
+
+      // Kunci: .stage-frame punya overflow:hidden, jadi bagian #cc/#player yang meluber keluar
+      // (misal karena efek "cover zoom" pada .stage) harus ikut kepotong di sini. Border-radius
+      // SENGAJA tidak dibaked ke hasil export (sama seperti perilaku sebelumnya) — hasilnya persegi
+      // penuh 1080x1920, biar gampang dipakai ulang/di-crop manual.
+      outCtx.save();
+      outCtx.beginPath();
+      outCtx.rect(0, 0, EXPORT_W, EXPORT_H);
+      outCtx.clip();
+
+      const ccX = Math.round((ccRect.left - rect.left) * scale);
+      const ccY = Math.round((ccRect.top - rect.top) * scale);
+      outCtx.drawImage(ccCanvas, ccX, ccY, outCcW, outCcH);
+
+      if (playerCanvas) {
+        const playerX = Math.round((playerRect.left - rect.left) * scale);
+        const playerY = Math.round((playerRect.top - rect.top) * scale);
+        outCtx.globalAlpha = playerOpacity;
+        outCtx.drawImage(playerCanvas, playerX, playerY, outPlayerW, outPlayerH);
+        outCtx.globalAlpha = 1;
       }
-      const ctx = exportCloneCtx;
 
-      if (ctx.videoImgEl && rawWallpaperUrl) ctx.videoImgEl.src = rawWallpaperUrl;
-      if (ctx.backdropImgEl && ccBlurUrl) ctx.backdropImgEl.src = ccBlurUrl;
-      if (ctx.afterImgEl && openBlurUrl) ctx.afterImgEl.src = openBlurUrl;
-
-      await Promise.all([waitImgLoaded(ctx.videoImgEl), waitImgLoaded(ctx.backdropImgEl), waitImgLoaded(ctx.afterImgEl)]);
-
-      try {
-        // ==== 3. Rasterisasi clone KANVAS PENUH (frameClone, 9:16) yang sudah "dibekukan"
-        // (video jadi gambar, blur sudah di-bake manual) lewat renderer SVG asli browser
-        // (rasterizeNode), BUKAN html2canvas. Border-radius + overflow:hidden milik .stage-frame
-        // ikut ter-capture apa adanya (lewat CSS yang disuntik ke <style>), jadi sudut yang
-        // membulat otomatis transparan. ====
-        const captured = await rasterizeNode(ctx.frameClone, rect.width, rect.height, scale);
-
-        // ==== 4. Output dikunci persis 1080x1920 (9:16) — SAMA PERSIS dengan apa yang tampak di kanvas,
-        // tanpa crop tambahan ke area layar HP lagi. Kanvas-lah yang jadi patokan, bukan konten di dalamnya. ====
-        const out = document.createElement('canvas');
-        out.width = EXPORT_W;
-        out.height = EXPORT_H;
-        const outCtx = out.getContext('2d');
-        if (!outCtx) throw new Error('Canvas context tidak tersedia');
-        outCtx.imageSmoothingEnabled = true;
-        outCtx.imageSmoothingQuality = 'high';
-        outCtx.drawImage(captured, 0, 0, captured.width, captured.height, 0, 0, EXPORT_W, EXPORT_H);
-        return out;
-      } finally {
-        if (!reuseClone) teardownExportClone(); // Export Frame: bersihkan lagi segera, jangan nyampah di DOM
-      }
+      outCtx.restore();
+      return out;
     }
 
     on(exportFrameBtn, 'click', async (e: Event) => {
@@ -1425,6 +1303,7 @@ export default function App() {
       }
     });
 
+
     // ==== Export Assets: rasterisasi SETIAP komponen SVG (Control Center & Music Player) secara MANDIRI
     // dari ukuran aslinya masing-masing (bukan dari .stage yang sudah discale responsif ke layar), dalam
     // resolusi sangat tinggi (jauh di atas 4K), lalu dibungkus jadi satu file .zip. Beda dengan Export Frame
@@ -1433,73 +1312,22 @@ export default function App() {
     const exportAssetsBtn = $<HTMLButtonElement>('exportAssetsBtn');
     const ASSET_SCALE = 8; // ~8x resolusi asli tiap komponen — jauh melebihi 4K (cc: 3600x7360px, player: 2688x4800px)
 
+    // CATATAN: dulu fungsi ini membungkus DIV pembungkus (.cc/.player) lewat <foreignObject> —
+    // itu juga kena masalah taint yang sama seperti captureStageCanvas (lihat catatan panjang di
+    // atas). #cc & #player sendiri sudah <svg> murni tanpa foreignObject di dalamnya, jadi sekarang
+    // svg-nya di-clone & di-rasterisasi LANGSUNG (cabang SVGSVGElement di rasterizeNode, tanpa
+    // wrapping apa pun) — sekalian membuang logika bake wallpaper-video/backdrop-blur yang sudah
+    // jadi dead code total sejak elemen wallpaper-nya dihapus dari markup.
     async function captureComponentCanvas(
-      sourceEl: HTMLElement,
+      wrapEl: HTMLElement, // div pembungkus (#cc atau #player), dipakai buat cari <svg> di dalamnya
       nativeW: number,
       nativeH: number,
-      scale: number,
-      bakeWallpaper: boolean
+      scale: number
     ): Promise<HTMLCanvasElement> {
-      const wrap = document.createElement('div');
-      wrap.style.cssText = `position:fixed;left:-99999px;top:0;width:${nativeW}px;height:${nativeH}px;pointer-events:none;`;
-      const clone = sourceEl.cloneNode(true) as HTMLElement;
-      clone.removeAttribute('id');
-      clone.style.cssText = `position:relative;left:0;top:0;inset:auto;width:${nativeW}px;height:${nativeH}px;opacity:1;pointer-events:none;transform:none;`;
-      wrap.appendChild(clone);
-      document.body.appendChild(wrap);
-
-      try {
-        // Komponen Control Center punya wallpaper <video> + backdrop-filter di dalam <foreignObject>,
-        // yang keduanya nggak bisa dituangkan apa adanya ke dokumen SVG statis — dibekukan dulu jadi
-        // gambar statis (teknik sama seperti captureStageCanvas di atas), khusus untuk komponen ini.
-        if (bakeWallpaper && wallpaperVideoEl && wallpaperVideoEl.readyState >= 2) {
-          const cloneVideoEl = clone.querySelector<HTMLVideoElement>('.wallpaper-video');
-          const cloneVideoFO = cloneVideoEl?.closest('foreignObject');
-          const wx = Number(cloneVideoFO?.getAttribute('x') ?? 24);
-          const wy = Number(cloneVideoFO?.getAttribute('y') ?? 23);
-          const ww = Number(cloneVideoFO?.getAttribute('width') ?? 402);
-          const wh = Number(cloneVideoFO?.getAttribute('height') ?? 874);
-          const CAPTURE_SCALE = 2.5; // resolusi bake wallpaper dinaikkan dari default Export Frame karena hasil akhirnya di-upscale jauh lebih tinggi
-          const cw = Math.round(ww * CAPTURE_SCALE);
-          const ch = Math.round(wh * CAPTURE_SCALE);
-          const rawWallpaperUrl = captureVideoFrame(wallpaperVideoEl, cw, ch);
-          const ccBlurUrl = await blurAndDim(rawWallpaperUrl, cw, ch, 12 * CAPTURE_SCALE, 0.5);
-
-          if (cloneVideoFO) {
-            cloneVideoFO.innerHTML = '';
-            const img = document.createElementNS('http://www.w3.org/1999/xhtml', 'img') as unknown as HTMLImageElement;
-            img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
-            img.src = rawWallpaperUrl;
-            cloneVideoFO.appendChild(img);
-            await waitImgLoaded(img);
-          }
-
-          const cloneBackdropDiv = clone.querySelector<HTMLElement>('foreignObject div[style*="backdrop-filter"]');
-          const backdropFO = cloneBackdropDiv?.closest('foreignObject');
-          if (backdropFO) {
-            backdropFO.setAttribute('x', String(wx));
-            backdropFO.setAttribute('y', String(wy));
-            backdropFO.setAttribute('width', String(ww));
-            backdropFO.setAttribute('height', String(wh));
-            backdropFO.innerHTML = '';
-            const img = document.createElementNS('http://www.w3.org/1999/xhtml', 'img') as unknown as HTMLImageElement;
-            img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
-            img.src = ccBlurUrl;
-            backdropFO.appendChild(img);
-            await waitImgLoaded(img);
-          }
-
-          const flatTintPath = clone.querySelector('path[data-figma-bg-blur-radius]');
-          if (flatTintPath) flatTintPath.setAttribute('fill-opacity', '0');
-        }
-
-        // `clone` di sini adalah <div class="cc"/"player"> pembungkus <svg> di dalamnya, jadi
-        // rasterizeNode akan otomatis membungkusnya lewat <foreignObject> (lihat cabang else
-        // di rasterizeNode) — sama seperti perlakuan .stage-frame di captureStageCanvas.
-        return await rasterizeNode(clone, nativeW, nativeH, scale);
-      } finally {
-        document.body.removeChild(wrap);
-      }
+      const svgEl = wrapEl.querySelector<SVGSVGElement>('svg');
+      if (!svgEl) throw new Error('Elemen <svg> tidak ditemukan di komponen ini.');
+      const clone = svgEl.cloneNode(true) as SVGSVGElement;
+      return await rasterizeNode(clone, nativeW, nativeH, scale);
     }
 
     function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -1519,13 +1347,13 @@ export default function App() {
         // Komponen 1: Control Center (450x920 asli) — nama file mengikuti nama komponennya
         exportAssetsBtn.textContent = 'Merender Control Center...';
         const ccEl = $('cc');
-        const ccCanvas = await captureComponentCanvas(ccEl, 450, 920, ASSET_SCALE, true);
+        const ccCanvas = await captureComponentCanvas(ccEl, 450, 920, ASSET_SCALE);
         const ccBlob = await canvasToPngBlob(ccCanvas);
 
-        // Komponen 2: Music Player (336x600 asli) — self-contained, tanpa wallpaper video
+        // Komponen 2: Music Player (336x600 asli)
         exportAssetsBtn.textContent = 'Merender Music Player...';
         const playerEl = $('player');
-        const playerCanvas = await captureComponentCanvas(playerEl, 336, 600, ASSET_SCALE, false);
+        const playerCanvas = await captureComponentCanvas(playerEl, 336, 600, ASSET_SCALE);
         const playerBlob = await canvasToPngBlob(playerCanvas);
 
         exportAssetsBtn.textContent = 'Membungkus ZIP...';
@@ -1658,7 +1486,7 @@ export default function App() {
 
           // ==== 2. Capture frame kanvas (reuse pipeline yang sama dengan Export Frame, tapi clone DOM-nya
           // dipakai ULANG lintas semua frame — reuseClone=true) ====
-          const canvas = await captureStageCanvas(true);
+          const canvas = await captureStageCanvas();
 
           // ==== 3. Encode frame ====
           const frame = new VideoFrame(canvas, {
@@ -1689,7 +1517,6 @@ export default function App() {
         alert(`Gagal export video. Coba lagi.\n\nDetail: ${detail}`);
       } finally {
         encoder.close();
-        teardownExportClone(); // clone yang dipakai-ulang sepanjang render video dibersihkan sekali di sini
         elapsed = originalElapsed;
         renderDuration();
         if (wasPlaying) startTick();
