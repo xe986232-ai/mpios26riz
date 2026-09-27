@@ -1011,115 +1011,151 @@ export default function App() {
     // Capture SATU frame kanvas (state DOM saat fungsi ini dipanggil) → canvas EXPORT_W x EXPORT_H.
     // Dipakai baik oleh Export Frame (sekali panggil) maupun Export Video (dipanggil berulang per frame,
     // dengan state — elapsed, posisi video wallpaper, dll — sudah di-advance manual sebelum tiap panggilan).
-    async function captureStageCanvas(): Promise<HTMLCanvasElement> {
-      let cloneWrap: HTMLDivElement | null = null;
+    // ==== Konteks clone yang dipakai ULANG lintas frame (dibuat SEKALI, bukan dibongkar-pasang tiap frame) ====
+    // Sebelumnya: setiap panggil captureStageCanvas(), seluruh .stage-frame di-clone ulang dari nol,
+    // ditempel ke document.body, lalu dihapus lagi — untuk video 1000 frame itu artinya clone+attach+detach
+    // DOM kompleks 1000 KALI. Sekarang clone-nya dibuat sekali (lewat setupExportClone) dan dipakai ulang;
+    // tiap frame cuma nge-update src gambar wallpaper/blur yang sudah ada, bukan bangun ulang DOM-nya.
+    type ExportCloneCtx = {
+      cloneWrap: HTMLDivElement;
+      frameClone: HTMLElement;
+      videoImgEl: HTMLImageElement | null;
+      backdropImgEl: HTMLImageElement | null;
+      afterImgEl: HTMLImageElement | null; // null kalau Music Player tidak sedang "open"
+    };
+    let exportCloneCtx: ExportCloneCtx | null = null;
+
+    function teardownExportClone() {
+      if (exportCloneCtx?.cloneWrap.parentNode) {
+        exportCloneCtx.cloneWrap.parentNode.removeChild(exportCloneCtx.cloneWrap);
+      }
+      exportCloneCtx = null;
+    }
+
+    function setupExportClone(rect: DOMRectReadOnly, wx: number, wy: number, ww: number, wh: number, isOpen: boolean): ExportCloneCtx {
+      const cloneWrap = document.createElement('div');
+      cloneWrap.className = 'export-frame-clone';
+      cloneWrap.style.cssText =
+        'position:fixed;left:-99999px;top:0;width:' + rect.width + 'px;height:' + rect.height + 'px;pointer-events:none;';
+
+      const frameClone = stageFrame.cloneNode(true) as HTMLElement;
+      const stageClone = (frameClone.querySelector<HTMLElement>('#stage') ?? frameClone) as HTMLElement;
+      stageClone.removeAttribute('id');
+      const styleOverride = document.createElement('style');
+      styleOverride.textContent =
+        '.export-frame-clone .stage::after { display: none !important; }' +
+        '.export-frame-clone .stage-frame { border-radius: 0 !important; }';
+      cloneWrap.appendChild(styleOverride);
+      cloneWrap.appendChild(frameClone);
+      document.body.appendChild(cloneWrap);
+
+      // Siapkan <img> persisten buat wallpaper video beku — src-nya di-update tiap frame, elemennya sendiri
+      // TIDAK dibuat ulang.
+      let videoImgEl: HTMLImageElement | null = null;
+      const cloneVideoEl = stageClone.querySelector<HTMLVideoElement>('.wallpaper-video');
+      const cloneVideoFO = cloneVideoEl?.closest('foreignObject');
+      if (cloneVideoFO) {
+        cloneVideoFO.innerHTML = '';
+        videoImgEl = document.createElementNS('http://www.w3.org/1999/xhtml', 'img') as unknown as HTMLImageElement;
+        videoImgEl.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+        cloneVideoFO.appendChild(videoImgEl);
+      }
+
+      // Siapkan <img> persisten buat lapisan blur Control Center (backdrop-filter pengganti).
+      let backdropImgEl: HTMLImageElement | null = null;
+      const cloneBackdropDiv = stageClone.querySelector<HTMLElement>('foreignObject div[style*="backdrop-filter"]');
+      const backdropFO = cloneBackdropDiv?.closest('foreignObject');
+      if (backdropFO) {
+        backdropFO.setAttribute('x', String(wx));
+        backdropFO.setAttribute('y', String(wy));
+        backdropFO.setAttribute('width', String(ww));
+        backdropFO.setAttribute('height', String(wh));
+        backdropFO.innerHTML = '';
+        backdropImgEl = document.createElementNS('http://www.w3.org/1999/xhtml', 'img') as unknown as HTMLImageElement;
+        backdropImgEl.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+        backdropFO.appendChild(backdropImgEl);
+      }
+
+      const flatTintPath = stageClone.querySelector('path[data-figma-bg-blur-radius]');
+      if (flatTintPath) flatTintPath.setAttribute('fill-opacity', '0');
+
+      // Lapisan dim+blur ekstra (Music Player "open") — statenya diasumsikan TETAP sepanjang satu sesi
+      // export (nggak toggle open/close di tengah render 1 video), jadi elemennya dibuat sekali di sini kalau perlu.
+      let afterImgEl: HTMLImageElement | null = null;
+      if (isOpen) {
+        const afterLayer = document.createElement('div');
+        afterLayer.style.cssText =
+          'position:absolute;left:5.33%;top:2.5%;width:89.33%;height:95%;z-index:1;pointer-events:none;overflow:hidden;border-radius:13.5%/6.2%;';
+        afterImgEl = document.createElement('img');
+        afterImgEl.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+        afterLayer.appendChild(afterImgEl);
+        stageClone.appendChild(afterLayer);
+      }
+
+      return { cloneWrap, frameClone, videoImgEl, backdropImgEl, afterImgEl };
+    }
+
+    function waitImgLoaded(img: HTMLImageElement | null): Promise<void> {
+      if (!img || !img.src) return Promise.resolve();
+      if (img.complete) return Promise.resolve();
+      return new Promise((resolve) => {
+        img.onload = () => resolve();
+        img.onerror = () => resolve();
+      });
+    }
+
+    // Capture SATU frame kanvas (state DOM saat fungsi ini dipanggil) → canvas EXPORT_W x EXPORT_H.
+    // Dipakai baik oleh Export Frame (sekali panggil, reuseClone=false → clone dibongkar lagi setelah selesai)
+    // maupun Export Video (dipanggil berulang per frame dengan reuseClone=true → clone dipakai ulang,
+    // caller yang bertanggung jawab manggil teardownExportClone() setelah loop selesai).
+    async function captureStageCanvas(reuseClone: boolean = false): Promise<HTMLCanvasElement> {
+      const rect = stageFrame.getBoundingClientRect();
+      // Render pada skala yang membuat tinggi kanvas pas 1920px; karena .stage-frame terkunci rasio 9:16
+      // di CSS, lebarnya otomatis ikut pas ~1080px — hasil export jadi identik dengan kanvas di layar.
+      const scale = EXPORT_H / rect.height;
+
+      // ==== 1. Bekukan frame video wallpaper saat ini + siapkan lapisan blur pengganti backdrop-filter ====
+      const videoEl = wallpaperVideoEl;
+      const videoFO = videoEl?.closest('foreignObject') || null;
+      const wx = Number(videoFO?.getAttribute('x') ?? 24);
+      const wy = Number(videoFO?.getAttribute('y') ?? 23);
+      const ww = Number(videoFO?.getAttribute('width') ?? 402);
+      const wh = Number(videoFO?.getAttribute('height') ?? 874);
+      const CAPTURE_SCALE = 1.8; // resolusi capture wallpaper, independen dari skala export akhir — diturunkan dari 2.5 biar lebih ringan per frame saat export video (kualitas akhir tetap dikunci di EXPORT_W x EXPORT_H)
+      const cw = Math.round(ww * CAPTURE_SCALE);
+      const ch = Math.round(wh * CAPTURE_SCALE);
+
+      let rawWallpaperUrl: string | null = null;
+      let ccBlurUrl: string | null = null;
+      let openBlurUrl: string | null = null;
+      const isOpen = stage.classList.contains('open');
+
+      if (videoEl && videoEl.readyState >= 2) {
+        rawWallpaperUrl = captureVideoFrame(videoEl, cw, ch);
+        ccBlurUrl = await blurAndDim(rawWallpaperUrl, cw, ch, 12 * CAPTURE_SCALE, 0.5);
+        if (isOpen) {
+          openBlurUrl = await blurAndDim(ccBlurUrl, cw, ch, 18 * CAPTURE_SCALE, 0.15);
+        }
+      }
+
+      // ==== 2. Siapkan/pakai-ulang clone .stage-frame ====
+      if (!reuseClone) teardownExportClone(); // Export Frame: selalu mulai dari clone bersih
+      if (!exportCloneCtx) {
+        exportCloneCtx = setupExportClone(rect, wx, wy, ww, wh, isOpen);
+      }
+      const ctx = exportCloneCtx;
+
+      if (ctx.videoImgEl && rawWallpaperUrl) ctx.videoImgEl.src = rawWallpaperUrl;
+      if (ctx.backdropImgEl && ccBlurUrl) ctx.backdropImgEl.src = ccBlurUrl;
+      if (ctx.afterImgEl && openBlurUrl) ctx.afterImgEl.src = openBlurUrl;
+
+      await Promise.all([waitImgLoaded(ctx.videoImgEl), waitImgLoaded(ctx.backdropImgEl), waitImgLoaded(ctx.afterImgEl)]);
+
       try {
-        const rect = stageFrame.getBoundingClientRect();
-        // Render pada skala yang membuat tinggi kanvas pas 1920px; karena .stage-frame terkunci rasio 9:16
-        // di CSS, lebarnya otomatis ikut pas ~1080px — hasil export jadi identik dengan kanvas di layar.
-        const scale = EXPORT_H / rect.height;
-
-        // ==== 1. Bekukan frame video wallpaper saat ini + siapkan lapisan blur pengganti backdrop-filter ====
-        const videoEl = wallpaperVideoEl;
-        const videoFO = videoEl?.closest('foreignObject') || null;
-        const wx = Number(videoFO?.getAttribute('x') ?? 24);
-        const wy = Number(videoFO?.getAttribute('y') ?? 23);
-        const ww = Number(videoFO?.getAttribute('width') ?? 402);
-        const wh = Number(videoFO?.getAttribute('height') ?? 874);
-        const CAPTURE_SCALE = 2.5; // resolusi capture wallpaper, independen dari skala export akhir
-        const cw = Math.round(ww * CAPTURE_SCALE);
-        const ch = Math.round(wh * CAPTURE_SCALE);
-
-        let rawWallpaperUrl: string | null = null;
-        let ccBlurUrl: string | null = null; // pengganti backdrop-filter blur(12px) + hitam 50% (selalu aktif di Control Center)
-        let openBlurUrl: string | null = null; // pengganti stage::after blur(18px) + hitam 15% (aktif saat Music Player terbuka)
-
-        if (videoEl && videoEl.readyState >= 2) {
-          rawWallpaperUrl = captureVideoFrame(videoEl, cw, ch);
-          ccBlurUrl = await blurAndDim(rawWallpaperUrl, cw, ch, 12 * CAPTURE_SCALE, 0.5);
-          if (stage.classList.contains('open')) {
-            openBlurUrl = await blurAndDim(ccBlurUrl, cw, ch, 18 * CAPTURE_SCALE, 0.15);
-          }
-        }
-
-        // ==== 2. Clone seluruh .stage-frame (kanvas 9:16 utuh, biar modifikasi di bawah ini tidak mengganggu
-        // tampilan asli & video yang lagi jalan). stageClone tetap merujuk ke elemen .stage di dalamnya,
-        // supaya semua posisi persen (video, backdrop, dll — relatif ke viewBox 450x920) tetap benar. ====
-        cloneWrap = document.createElement('div');
-        cloneWrap.className = 'export-frame-clone';
-        cloneWrap.style.cssText =
-          'position:fixed;left:-99999px;top:0;width:' + rect.width + 'px;height:' + rect.height + 'px;pointer-events:none;';
-
-        const frameClone = stageFrame.cloneNode(true) as HTMLElement;
-        const stageClone = (frameClone.querySelector<HTMLElement>('#stage') ?? frameClone) as HTMLElement;
-        stageClone.removeAttribute('id'); // hindari id "stage" duplikat selagi clone ini nempel sementara di DOM
-        // Matikan blur bawaan CSS punya clone ini: backdrop-filter tidak pernah kebawa html2canvas,
-        // tapi warna hitam datarnya (rgba tanpa blur) tetap bisa ke-render & bikin dobel gelap
-        // di atas lapisan pengganti yang kita suntikkan manual di bawah.
-        const styleOverride = document.createElement('style');
-        styleOverride.textContent =
-          '.export-frame-clone .stage::after { display: none !important; }' +
-          '.export-frame-clone .stage-frame { border-radius: 0 !important; }';
-        cloneWrap.appendChild(styleOverride);
-        cloneWrap.appendChild(frameClone);
-        document.body.appendChild(cloneWrap);
-
-        // Ganti <video> jadi <img> beku (frame saat ini)
-        const cloneVideoEl = stageClone.querySelector<HTMLVideoElement>('.wallpaper-video');
-        const cloneVideoFO = cloneVideoEl?.closest('foreignObject');
-        if (cloneVideoFO && rawWallpaperUrl) {
-          cloneVideoFO.innerHTML = `<img xmlns="http://www.w3.org/1999/xhtml" src="${rawWallpaperUrl}" style="width:100%;height:100%;object-fit:cover;display:block" />`;
-        }
-
-        // Ganti div backdrop-filter (blur Control Center yang selalu aktif) dengan gambar hasil blur manual.
-        // foreignObject-nya disamakan ukurannya dgn kotak wallpaper biar tidak perlu clip-path lagi.
-        const cloneBackdropDiv = stageClone.querySelector<HTMLElement>(
-          'foreignObject div[style*="backdrop-filter"]'
-        );
-        const backdropFO = cloneBackdropDiv?.closest('foreignObject');
-        if (backdropFO && ccBlurUrl) {
-          backdropFO.setAttribute('x', String(wx));
-          backdropFO.setAttribute('y', String(wy));
-          backdropFO.setAttribute('width', String(ww));
-          backdropFO.setAttribute('height', String(wh));
-          backdropFO.innerHTML = `<img xmlns="http://www.w3.org/1999/xhtml" src="${ccBlurUrl}" style="width:100%;height:100%;object-fit:cover;display:block" />`;
-        }
-
-        // Path tint hitam 50% datar (fallback figma) dimatikan karena sudah kebawa di dalam ccBlurUrl,
-        // kalau dibiarkan nyala dobel jadi lebih gelap dari aslinya.
-        const flatTintPath = stageClone.querySelector('path[data-figma-bg-blur-radius]');
-        if (flatTintPath) flatTintPath.setAttribute('fill-opacity', '0');
-
-        // Kalau Music Player sedang terbuka, tambahkan lapisan dim+blur ekstra persis
-        // menggantikan .stage::after (blur 18px + hitam 15% di atas wallpaper yang sudah diblur tahap 1)
-        if (openBlurUrl) {
-          const afterLayer = document.createElement('div');
-          afterLayer.style.cssText =
-            'position:absolute;left:5.33%;top:2.5%;width:89.33%;height:95%;z-index:1;pointer-events:none;overflow:hidden;border-radius:13.5%/6.2%;';
-          const afterImg = document.createElement('img');
-          afterImg.src = openBlurUrl;
-          afterImg.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
-          afterLayer.appendChild(afterImg);
-          stageClone.appendChild(afterLayer);
-        }
-
-        // Tunggu semua <img> pengganti kelar dimuat sebelum di-screenshot
-        const injectedImgs = Array.from(stageClone.querySelectorAll('img'));
-        await Promise.all(
-          injectedImgs.map(
-            (img) =>
-              new Promise<void>((resolve) => {
-                if (img.complete) return resolve();
-                img.onload = () => resolve();
-                img.onerror = () => resolve();
-              })
-          )
-        );
-
         // ==== 3. Screenshot clone KANVAS PENUH (frameClone, 9:16) yang sudah "dibekukan"
         // (video jadi gambar, blur sudah di-bake manual). Border-radius + overflow:hidden milik
         // .stage-frame ikut ter-capture apa adanya, jadi sudut yang membulat otomatis transparan. ====
-        const captured = await html2canvas(frameClone, {
+        const captured = await html2canvas(ctx.frameClone, {
           backgroundColor: null,
           useCORS: true,
           scale,
@@ -1130,12 +1166,12 @@ export default function App() {
         const out = document.createElement('canvas');
         out.width = EXPORT_W;
         out.height = EXPORT_H;
-        const ctx = out.getContext('2d');
-        if (!ctx) throw new Error('Canvas context tidak tersedia');
-        ctx.drawImage(captured, 0, 0, captured.width, captured.height, 0, 0, EXPORT_W, EXPORT_H);
+        const outCtx = out.getContext('2d');
+        if (!outCtx) throw new Error('Canvas context tidak tersedia');
+        outCtx.drawImage(captured, 0, 0, captured.width, captured.height, 0, 0, EXPORT_W, EXPORT_H);
         return out;
       } finally {
-        if (cloneWrap && cloneWrap.parentNode) cloneWrap.parentNode.removeChild(cloneWrap);
+        if (!reuseClone) teardownExportClone(); // Export Frame: bersihkan lagi segera, jangan nyampah di DOM
       }
     }
 
@@ -1167,7 +1203,7 @@ export default function App() {
     // bukan capture real-time), lalu encode tiap frame pakai WebCodecs VideoEncoder + mux jadi .mp4
     // pakai mp4-muxer. Semua di browser, tanpa server/Playwright — hasilnya tetap akurat & konsisten
     // walau device lemot, karena kita yang mengontrol "waktu" tiap frame, bukan menunggu jam asli. ====
-    const VIDEO_FPS = 30;
+    const VIDEO_FPS = 20; // diturunkan dari 30 → langsung motong ~33% jumlah frame yang harus di-render (masih halus untuk konten sosial media)
     const MAX_EXPORT_DURATION_SEC = 600; // batas atas keamanan (10 menit), bukan lagi patokan utama durasi
     const FALLBACK_EXPORT_DURATION_SEC = 10; // dipakai HANYA kalau belum ada lagu yang di-upload sama sekali
 
@@ -1270,8 +1306,9 @@ export default function App() {
             await seekVideoTo(wallpaperVideoEl, t);
           }
 
-          // ==== 2. Capture frame kanvas (reuse pipeline yang sama dengan Export Frame) ====
-          const canvas = await captureStageCanvas();
+          // ==== 2. Capture frame kanvas (reuse pipeline yang sama dengan Export Frame, tapi clone DOM-nya
+          // dipakai ULANG lintas semua frame — reuseClone=true) ====
+          const canvas = await captureStageCanvas(true);
 
           // ==== 3. Encode frame ====
           const frame = new VideoFrame(canvas, {
@@ -1302,6 +1339,7 @@ export default function App() {
         alert(`Gagal export video. Coba lagi.\n\nDetail: ${detail}`);
       } finally {
         encoder.close();
+        teardownExportClone(); // clone yang dipakai-ulang sepanjang render video dibersihkan sekali di sini
         elapsed = originalElapsed;
         renderDuration();
         if (wasPlaying) startTick();
