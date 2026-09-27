@@ -294,8 +294,17 @@ export const PANELS_MARKUP = `
   </div>
 
   <div class="control-panel">
+    <h3>Export Video</h3>
+    <div class="sub">Format MP4 nggak dukung transparansi, jadi bagian kartu yang tadinya transparan (kaya di Export Frame PNG) bakal ditimpa warna solid ini dulu sebelum di-render jadi video</div>
+    <div class="row">
+      <div class="row-head"><label for="ctrlExportVideoBg">Warna Background Video</label><span class="val" id="valExportVideoBg">#000000</span></div>
+      <input type="color" id="ctrlExportVideoBg" value="#000000">
+    </div>
+  </div>
+
+  <div class="control-panel">
     <h3>Export Frame</h3>
-    <div class="sub">Unduh tampilan HP saat ini sebagai gambar PNG rasio 9:16 (1080x1920)</div>
+    <div class="sub">Unduh tampilan HP saat ini sebagai gambar PNG rasio 9:16 (1080x1920) — background tetap transparan</div>
     <button class="reset-btn" id="exportFrameBtn">Export Frame (PNG 1080x1920)</button>
   </div>
 

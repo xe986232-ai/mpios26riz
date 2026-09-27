@@ -1167,6 +1167,18 @@ export default function App() {
     const exportVideoProgressWrap = $('exportVideoProgressWrap');
     const exportVideoProgressFill = $('exportVideoProgressFill');
     const exportVideoProgressLabel = $('exportVideoProgressLabel');
+    // MP4/H.264 nggak punya alpha channel — bagian kartu yang transparan (rgba dengan alpha<1,
+    // lihat catatan panjang di captureStageCanvas) bakal KEHILANGAN alpha-nya pas di-encode jadi
+    // video, dan cuma nyisain RGB mentahnya (putih) → makanya sebelumnya kartu jadi putih solid
+    // pas di-export video, padahal Export Frame (PNG, yang punya alpha channel) hasilnya normal.
+    // Fix-nya: khusus buat Export Video, canvas di-flatten dulu ke warna solid ini (dipilih user)
+    // SEBELUM alpha-nya kebuang — persis kaya nge-flatten PNG transparan di atas layer warna di
+    // editor gambar manual. Export Frame & Export Assets tetap transparan apa adanya (tidak kena).
+    const ctrlExportVideoBg = $<HTMLInputElement>('ctrlExportVideoBg');
+    const valExportVideoBg = $('valExportVideoBg');
+    on(ctrlExportVideoBg, 'input', () => {
+      valExportVideoBg.textContent = ctrlExportVideoBg.value;
+    });
     const EXPORT_H = 1920; // tinggi target hasil export
     const EXPORT_W = 1080; // lebar target hasil export — dikunci 9:16, sama seperti .stage-frame
     const stageFrame = stage.parentElement as HTMLElement; // .stage-frame — elemen kanvas yang jadi acuan crop export
@@ -1204,7 +1216,7 @@ export default function App() {
     // Capture SATU frame kanvas (state DOM saat fungsi ini dipanggil) → canvas EXPORT_W x EXPORT_H.
     // Dipakai baik oleh Export Frame maupun Export Video (dipanggil berulang per frame, dengan
     // state — elapsed, dll — sudah di-advance manual sebelum tiap panggilan).
-    async function captureStageCanvas(): Promise<HTMLCanvasElement> {
+    async function captureStageCanvas(backgroundColor?: string): Promise<HTMLCanvasElement> {
       const rect = stageFrame.getBoundingClientRect();
       // Guard: kalau .stage-frame lagi berukuran 0 (misal ke-trigger saat belum ke-render/tersembunyi),
       // scale bakal jadi Infinity/NaN dan bikin canvas.width = Infinity → browser throw IndexSizeError
@@ -1261,6 +1273,14 @@ export default function App() {
       outCtx.beginPath();
       outCtx.rect(0, 0, EXPORT_W, EXPORT_H);
       outCtx.clip();
+
+      // Cuma dipanggil kalau backgroundColor di-set (khusus Export Video, lihat catatan di atas
+      // deklarasi ctrlExportVideoBg) — Export Frame/Assets memanggil captureStageCanvas() tanpa
+      // argumen sehingga canvas-nya tetap transparan apa adanya, alpha-nya kebawa ke PNG.
+      if (backgroundColor) {
+        outCtx.fillStyle = backgroundColor;
+        outCtx.fillRect(0, 0, EXPORT_W, EXPORT_H);
+      }
 
       const ccX = Math.round((ccRect.left - rect.left) * scale);
       const ccY = Math.round((ccRect.top - rect.top) * scale);
@@ -1459,6 +1479,11 @@ export default function App() {
       const wasPlaying = !audioPreviewEl.paused;
       stopTick();
 
+      // Warna solid buat nimpa bagian transparan kartu (lihat catatan di deklarasi ctrlExportVideoBg
+      // di atas) — dibaca sekali di awal, bukan tiap frame, karena nggak ada alasan buat berubah
+      // di tengah proses render satu video.
+      const videoBackgroundColor = ctrlExportVideoBg.value || '#000000';
+
       const target = new ArrayBufferTarget();
       const muxer = new Muxer({
         target,
@@ -1484,9 +1509,9 @@ export default function App() {
             await seekVideoTo(wallpaperVideoEl, t);
           }
 
-          // ==== 2. Capture frame kanvas (reuse pipeline yang sama dengan Export Frame, tapi clone DOM-nya
-          // dipakai ULANG lintas semua frame — reuseClone=true) ====
-          const canvas = await captureStageCanvas();
+          // ==== 2. Capture frame kanvas (reuse pipeline yang sama dengan Export Frame, tapi kali ini
+          // di-flatten dulu ke videoBackgroundColor karena MP4 nggak punya alpha channel) ====
+          const canvas = await captureStageCanvas(videoBackgroundColor);
 
           // ==== 3. Encode frame ====
           // PENTING: sengaja TIDAK kasih elemen <canvas> langsung ke `new VideoFrame(canvas, ...)`.

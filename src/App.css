@@ -137,6 +137,13 @@
     color: #fff; font-size: 13px; outline: none;
   }
   .control-panel input[type="text"]:focus { border-color: rgba(10,132,255,.65); }
+  .control-panel input[type="color"] {
+    width: 100%; height: 36px; padding: 0; border: 1px solid rgba(255,255,255,.12);
+    border-radius: 10px; background: #303034; cursor: pointer;
+  }
+  .control-panel input[type="color"]::-webkit-color-swatch-wrapper { padding: 3px; }
+  .control-panel input[type="color"]::-webkit-color-swatch { border: none; border-radius: 7px; }
+  .control-panel input[type="color"]::-moz-color-swatch { border: none; border-radius: 7px; }
   .control-panel .reset-btn {
     width: 100%; margin-top: 6px; padding: 10px; border-radius: 12px; border: none;
     background: rgba(255,255,255,.1); color: #fff; font-size: 13px; cursor: pointer;
