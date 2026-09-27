@@ -31,7 +31,7 @@
     width: min(450px, 92vw); aspect-ratio: 9 / 16;
     display: flex; align-items: center; justify-content: center; overflow: hidden;
     border-radius: 28px;
-    background: #000;
+    background: transparent;
   }
   /* Kanvas audio: sama lebarnya dengan .stage-frame, tempat waveform digambar + tombol upload nempel di dalamnya. */
   .audio-canvas-wrap {
