@@ -745,6 +745,65 @@ export default function App() {
       applyStageTransform();
     });
 
+    // ==== Upload gambar custom untuk background layar HP (di belakang Control Center) ====
+    const ctrlBgImage = $<HTMLInputElement>('ctrlBgImage');
+    const uploadBgBtn = $('uploadBgBtn');
+    const removeBgBtn = $<HTMLElement>('removeBgBtn');
+    const ctrlBgZoom = $<HTMLInputElement>('ctrlBgZoom');
+    const valBgZoom = $('valBgZoom');
+    const bgImageEl = $<SVGImageElement>('image0_2570_20912');
+    // Ukuran frame HP (dari markup): 450 x 920 — dipakai buat ngitung ulang posisi image pas di-zoom.
+    const BG_FRAME_W = 450;
+    const BG_FRAME_H = 920;
+    // Simpen href original (wallpaper bawaan) pas mount, biar tombol "Hapus" bisa balikin ke situ.
+    const defaultBgHref = bgImageEl.getAttribute('href') || bgImageEl.getAttribute('xlink:href') || '';
+
+    function setBgImage(dataUrl: string) {
+      bgImageEl.setAttribute('href', dataUrl);
+      bgImageEl.setAttribute('xlink:href', dataUrl);
+      removeBgBtn.style.display = dataUrl !== defaultBgHref ? 'block' : 'none';
+    }
+
+    // Kecilin/gedein gambar background: di zoom < 100%, gambar jadi lebih kecil dari frame HP
+    // & ditaruh di tengah (sisanya keliatan warna hitam dari .phone-frame di belakangnya).
+    // Di zoom > 100%, gambar membesar dari titik tengah (crop makin rapat).
+    function applyBgZoom() {
+      const zoom = Number(ctrlBgZoom.value) / 100;
+      const w = BG_FRAME_W * zoom;
+      const h = BG_FRAME_H * zoom;
+      const x = (BG_FRAME_W - w) / 2;
+      const y = (BG_FRAME_H - h) / 2;
+      bgImageEl.setAttribute('width', String(w));
+      bgImageEl.setAttribute('height', String(h));
+      bgImageEl.setAttribute('x', String(x));
+      bgImageEl.setAttribute('y', String(y));
+      valBgZoom.textContent = ctrlBgZoom.value + '%';
+    }
+
+    on(uploadBgBtn, 'click', (e: Event) => {
+      e.stopPropagation();
+      ctrlBgImage.click();
+    });
+    on(removeBgBtn, 'click', (e: Event) => {
+      e.stopPropagation();
+      setBgImage(defaultBgHref);
+      ctrlBgImage.value = '';
+    });
+    on(ctrlBgImage, 'click', (e: Event) => e.stopPropagation());
+    on(ctrlBgImage, 'change', () => {
+      const file = ctrlBgImage.files && ctrlBgImage.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        setBgImage(dataUrl);
+      };
+      reader.readAsDataURL(file);
+    });
+    on(ctrlBgZoom, 'input', applyBgZoom);
+    on(ctrlBgZoom, 'click', (e: Event) => e.stopPropagation());
+    applyBgZoom();
+
     // ==== Upload gambar custom untuk album art ====
     const ctrlAlbumArt = $<HTMLInputElement>('ctrlAlbumArt');
     const uploadArtBtn = $('uploadArtBtn');
@@ -832,6 +891,7 @@ export default function App() {
       stage?: { zoom: number; offsetY: number };
       song: { title: string; artist: string; font: string };
       albumArt: string | null;
+      bg?: { image: string | null; zoom: number };
     };
 
     function collectSettings(): ExportedSettings {
@@ -862,6 +922,11 @@ export default function App() {
         },
         // href SVG kosong ("") dianggap "tidak ada album art custom"
         albumArt: albumArtImage.getAttribute('href') || null,
+        bg: {
+          // null berarti masih pakai wallpaper bawaan (belum di-custom)
+          image: bgImageEl.getAttribute('href') === defaultBgHref ? null : bgImageEl.getAttribute('href'),
+          zoom: Number(ctrlBgZoom.value),
+        },
       };
     }
 
@@ -889,6 +954,14 @@ export default function App() {
       } else {
         setAlbumArt('');
       }
+
+      if (data.bg?.image) {
+        setBgImage(data.bg.image);
+      } else {
+        setBgImage(defaultBgHref);
+      }
+      ctrlBgZoom.value = String(data.bg?.zoom ?? 100);
+      applyBgZoom();
 
       applyCardStyle();
       applyAlbumArtStyle();
@@ -1921,6 +1994,23 @@ export default function App() {
         </div>
       </div>
       <div className="customize-wrap">
+        <div className="album-art-upload-wrap" id="bgImageUploadWrap" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <span className="album-art-label">Background Layar (di belakang Control Center)</span>
+            <div className="album-art-btns">
+              <input type="file" accept="image/*" id="ctrlBgImage" style={{ display: 'none' }} />
+              <button type="button" className="album-art-btn" id="uploadBgBtn">Upload Background</button>
+              <button type="button" className="album-art-btn album-art-btn-danger" id="removeBgBtn" style={{ display: 'none' }}>Hapus Background</button>
+            </div>
+          </div>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <label htmlFor="ctrlBgZoom" style={{ fontSize: 13, color: '#d1d1d6' }}>Ukuran Background</label>
+              <span id="valBgZoom" style={{ color: '#0a84ff', fontVariantNumeric: 'tabular-nums', fontSize: 13 }}>100%</span>
+            </div>
+            <input type="range" id="ctrlBgZoom" min="30" max="200" step="1" defaultValue="100" style={{ width: '100%' }} />
+          </div>
+        </div>
         <div className="album-art-upload-wrap" id="albumArtUploadWrap">
           <span className="album-art-label">Cover / Album Art</span>
           <div className="album-art-btns">
