@@ -280,6 +280,22 @@ export default function App() {
     };
     if (audioCard) on(audioCard, 'click', openHandler);
 
+    // ==== Auto-buka Music Player sendiri ~3 detik setelah halaman dimuat ====
+    // Simulasi "ketekan" kartu audio kanan atas (pointerdown -> pointerup -> click)
+    // biar animasi tombol-nya kerasa beneran ditekan, bukan cuma state 'open' loncat tiba-tiba.
+    let autoOpenTimer: number | undefined;
+    if (audioCard) {
+      autoOpenTimer = window.setTimeout(() => {
+        if (stage.classList.contains('open')) return; // udah kebuka manual duluan, skip
+        audioCard.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        window.setTimeout(() => {
+          audioCard.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+          audioCard.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        }, 130);
+      }, 3000);
+      cleanupFns.push(() => window.clearTimeout(autoOpenTimer));
+    }
+
     const stageCloseHandler = () => {
       if (stage.classList.contains('open')) {
         stage.classList.remove('open');
