@@ -1321,6 +1321,12 @@ export default function App() {
     // caller yang bertanggung jawab manggil teardownExportClone() setelah loop selesai).
     async function captureStageCanvas(reuseClone: boolean = false): Promise<HTMLCanvasElement> {
       const rect = stageFrame.getBoundingClientRect();
+      // Guard: kalau .stage-frame lagi berukuran 0 (misal ke-trigger saat belum ke-render/tersembunyi),
+      // scale bakal jadi Infinity/NaN dan bikin canvas.width = Infinity → browser throw IndexSizeError
+      // tanpa pesan yang jelas. Ketangkep di sini dulu biar errornya informatif.
+      if (!rect.width || !rect.height) {
+        throw new Error(`Kanvas belum siap dirender (ukuran ${rect.width}x${rect.height}). Coba tunggu sebentar lalu klik lagi.`);
+      }
       // Render pada skala yang membuat tinggi kanvas pas 1920px; karena .stage-frame terkunci rasio 9:16
       // di CSS, lebarnya otomatis ikut pas ~1080px — hasil export jadi identik dengan kanvas di layar.
       const scale = EXPORT_H / rect.height;
@@ -1411,7 +1417,8 @@ export default function App() {
         URL.revokeObjectURL(url);
       } catch (err) {
         console.error('Export frame gagal:', err);
-        alert('Gagal export gambar. Coba lagi.');
+        const msg = err instanceof Error ? err.message : String(err);
+        alert(`Gagal export gambar: ${msg}\n\nCoba lagi. Kalau masih gagal, buka console browser (F12) buat lihat detail errornya.`);
       } finally {
         exportFrameBtn.disabled = false;
         exportFrameBtn.textContent = originalLabel;
