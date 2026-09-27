@@ -300,4 +300,10 @@ export const PANELS_MARKUP = `
     <button class="reset-btn" id="exportFrameBtn">Export Frame (PNG 1080x1920)</button>
   </div>
 
+  <div class="control-panel">
+    <h3>Export Assets</h3>
+    <div class="sub">Unduh semua komponen SVG (Control Center &amp; Music Player) sebagai PNG kualitas tinggi (4K+), dibungkus satu file ZIP</div>
+    <button class="reset-btn" id="exportAssetsBtn">Export Assets (ZIP PNG 4K)</button>
+  </div>
+
 `;

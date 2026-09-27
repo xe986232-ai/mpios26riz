@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import html2canvas from 'html2canvas';
+import JSZip from 'jszip';
 import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { STAGE_MARKUP, PANELS_MARKUP } from './markup';
 
@@ -1196,6 +1197,127 @@ export default function App() {
       } finally {
         exportFrameBtn.disabled = false;
         exportFrameBtn.textContent = originalLabel;
+      }
+    });
+
+    // ==== Export Assets: rasterisasi SETIAP komponen SVG (Control Center & Music Player) secara MANDIRI
+    // dari ukuran aslinya masing-masing (bukan dari .stage yang sudah discale responsif ke layar), dalam
+    // resolusi sangat tinggi (jauh di atas 4K), lalu dibungkus jadi satu file .zip. Beda dengan Export Frame
+    // yang cuma men-capture KANVAS 9:16 gabungan apa adanya (satu tampilan aktif saja), di sini KEDUA
+    // komponen selalu ikut ter-export sekaligus, terlepas dari mana yang sedang kelihatan di layar.
+    const exportAssetsBtn = $<HTMLButtonElement>('exportAssetsBtn');
+    const ASSET_SCALE = 8; // ~8x resolusi asli tiap komponen — jauh melebihi 4K (cc: 3600x7360px, player: 2688x4800px)
+
+    async function captureComponentCanvas(
+      sourceEl: HTMLElement,
+      nativeW: number,
+      nativeH: number,
+      scale: number,
+      bakeWallpaper: boolean
+    ): Promise<HTMLCanvasElement> {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = `position:fixed;left:-99999px;top:0;width:${nativeW}px;height:${nativeH}px;pointer-events:none;`;
+      const clone = sourceEl.cloneNode(true) as HTMLElement;
+      clone.removeAttribute('id');
+      clone.style.cssText = `position:relative;left:0;top:0;inset:auto;width:${nativeW}px;height:${nativeH}px;opacity:1;pointer-events:none;transform:none;`;
+      wrap.appendChild(clone);
+      document.body.appendChild(wrap);
+
+      try {
+        // Komponen Control Center punya wallpaper <video> + backdrop-filter di dalam <foreignObject>,
+        // yang keduanya TIDAK ter-render html2canvas kalau dibiarkan apa adanya — dibekukan dulu jadi
+        // gambar statis (teknik sama seperti captureStageCanvas di atas), khusus untuk komponen ini.
+        if (bakeWallpaper && wallpaperVideoEl && wallpaperVideoEl.readyState >= 2) {
+          const cloneVideoEl = clone.querySelector<HTMLVideoElement>('.wallpaper-video');
+          const cloneVideoFO = cloneVideoEl?.closest('foreignObject');
+          const wx = Number(cloneVideoFO?.getAttribute('x') ?? 24);
+          const wy = Number(cloneVideoFO?.getAttribute('y') ?? 23);
+          const ww = Number(cloneVideoFO?.getAttribute('width') ?? 402);
+          const wh = Number(cloneVideoFO?.getAttribute('height') ?? 874);
+          const CAPTURE_SCALE = 2.5; // resolusi bake wallpaper dinaikkan dari default Export Frame karena hasil akhirnya di-upscale jauh lebih tinggi
+          const cw = Math.round(ww * CAPTURE_SCALE);
+          const ch = Math.round(wh * CAPTURE_SCALE);
+          const rawWallpaperUrl = captureVideoFrame(wallpaperVideoEl, cw, ch);
+          const ccBlurUrl = await blurAndDim(rawWallpaperUrl, cw, ch, 12 * CAPTURE_SCALE, 0.5);
+
+          if (cloneVideoFO) {
+            cloneVideoFO.innerHTML = '';
+            const img = document.createElementNS('http://www.w3.org/1999/xhtml', 'img') as unknown as HTMLImageElement;
+            img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+            img.src = rawWallpaperUrl;
+            cloneVideoFO.appendChild(img);
+            await waitImgLoaded(img);
+          }
+
+          const cloneBackdropDiv = clone.querySelector<HTMLElement>('foreignObject div[style*="backdrop-filter"]');
+          const backdropFO = cloneBackdropDiv?.closest('foreignObject');
+          if (backdropFO) {
+            backdropFO.setAttribute('x', String(wx));
+            backdropFO.setAttribute('y', String(wy));
+            backdropFO.setAttribute('width', String(ww));
+            backdropFO.setAttribute('height', String(wh));
+            backdropFO.innerHTML = '';
+            const img = document.createElementNS('http://www.w3.org/1999/xhtml', 'img') as unknown as HTMLImageElement;
+            img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+            img.src = ccBlurUrl;
+            backdropFO.appendChild(img);
+            await waitImgLoaded(img);
+          }
+
+          const flatTintPath = clone.querySelector('path[data-figma-bg-blur-radius]');
+          if (flatTintPath) flatTintPath.setAttribute('fill-opacity', '0');
+        }
+
+        return await html2canvas(clone, { backgroundColor: null, useCORS: true, scale });
+      } finally {
+        document.body.removeChild(wrap);
+      }
+    }
+
+    function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+      return new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error('Gagal membuat PNG'));
+        }, 'image/png');
+      });
+    }
+
+    on(exportAssetsBtn, 'click', async (e: Event) => {
+      e.stopPropagation();
+      const originalLabel = exportAssetsBtn.textContent || 'Export Assets (ZIP PNG 4K)';
+      exportAssetsBtn.disabled = true;
+      try {
+        // Komponen 1: Control Center (450x920 asli) — nama file mengikuti nama komponennya
+        exportAssetsBtn.textContent = 'Merender Control Center...';
+        const ccEl = $('cc');
+        const ccCanvas = await captureComponentCanvas(ccEl, 450, 920, ASSET_SCALE, true);
+        const ccBlob = await canvasToPngBlob(ccCanvas);
+
+        // Komponen 2: Music Player (336x600 asli) — self-contained, tanpa wallpaper video
+        exportAssetsBtn.textContent = 'Merender Music Player...';
+        const playerEl = $('player');
+        const playerCanvas = await captureComponentCanvas(playerEl, 336, 600, ASSET_SCALE, false);
+        const playerBlob = await canvasToPngBlob(playerCanvas);
+
+        exportAssetsBtn.textContent = 'Membungkus ZIP...';
+        const zip = new JSZip();
+        zip.file(`control-center-${ccCanvas.width}x${ccCanvas.height}.png`, ccBlob);
+        zip.file(`music-player-${playerCanvas.width}x${playerCanvas.height}.png`, playerBlob);
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'assets-export.zip';
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('Export assets gagal:', err);
+        alert('Gagal export assets. Coba lagi.');
+      } finally {
+        exportAssetsBtn.disabled = false;
+        exportAssetsBtn.textContent = originalLabel;
       }
     });
 
