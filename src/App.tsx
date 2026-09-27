@@ -1433,6 +1433,19 @@ export default function App() {
       throw new Error('Tidak ada konfigurasi VideoEncoder (H.264) yang didukung browser ini.');
     }
 
+    // Sama kaya findSupportedVideoConfig, tapi buat audio (AAC-LC) — dipanggil kalau ada lagu yang
+    // di-upload (loadedAudioBuffer != null). SEBELUM fix ini, Muxer dibuat TANPA opsi `audio` sama
+    // sekali, jadi walaupun lagunya udah ke-decode & disimpan di loadedAudioBuffer (dipakai buat
+    // waveform & preview <audio>), audio itu nggak pernah ikut di-encode/mux ke file .mp4 hasil
+    // export — makanya videonya bisu walau di UI preview lagu terdengar normal.
+    async function findSupportedAudioConfig(numberOfChannels: number, sampleRate: number): Promise<AudioEncoderConfig> {
+      const bitrate = numberOfChannels >= 2 ? 160_000 : 96_000;
+      const config: AudioEncoderConfig = { codec: 'mp4a.40.2', numberOfChannels, sampleRate, bitrate };
+      const support = await AudioEncoder.isConfigSupported(config);
+      if (support.supported) return support.config ?? config;
+      throw new Error('Tidak ada konfigurasi AudioEncoder (AAC) yang didukung browser ini.');
+    }
+
     on(exportVideoBtn, 'click', async (e: Event) => {
       e.stopPropagation();
       // Durasi export sekarang ikut durasi lagu yang di-upload (songDuration), bukan hardcode lagi.
@@ -1466,6 +1479,22 @@ export default function App() {
         return;
       }
 
+      // Resolve config audio KALAU ada lagu yang di-upload. Kalau browser ini nggak dukung
+      // AudioEncoder/AAC sama sekali, jangan gagalin seluruh export — cukup lanjut tanpa audio
+      // (video-only, sama kayak perilaku sebelum fix ini) sambil kasih tau lewat console.
+      let desiredAudioConfig: AudioEncoderConfig | null = null;
+      if (loadedAudioBuffer) {
+        if (typeof AudioEncoder === 'undefined') {
+          console.warn('AudioEncoder tidak tersedia di browser ini — video akan di-export tanpa audio.');
+        } else {
+          try {
+            desiredAudioConfig = await findSupportedAudioConfig(loadedAudioBuffer.numberOfChannels, loadedAudioBuffer.sampleRate);
+          } catch (err) {
+            console.warn('Gagal cek dukungan AudioEncoder, lanjut export tanpa audio:', err);
+          }
+        }
+      }
+
       const originalLabel = exportVideoBtn.textContent || 'Export Video (MP4)';
       exportVideoBtn.disabled = true;
       exportFrameBtn.disabled = true;
@@ -1488,6 +1517,9 @@ export default function App() {
       const muxer = new Muxer({
         target,
         video: { codec: 'avc', width: EXPORT_W, height: EXPORT_H },
+        audio: desiredAudioConfig
+          ? { codec: 'aac', numberOfChannels: loadedAudioBuffer!.numberOfChannels, sampleRate: loadedAudioBuffer!.sampleRate }
+          : undefined,
         fastStart: 'in-memory',
       });
 
@@ -1496,6 +1528,14 @@ export default function App() {
         error: (err) => console.error('VideoEncoder error:', err),
       });
       encoder.configure(desiredConfig);
+
+      const audioEncoder = desiredAudioConfig
+        ? new AudioEncoder({
+            output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+            error: (err) => console.error('AudioEncoder error:', err),
+          })
+        : null;
+      if (audioEncoder && desiredAudioConfig) audioEncoder.configure(desiredAudioConfig);
 
       try {
         for (let i = 0; i < totalFrames; i++) {
@@ -1539,6 +1579,42 @@ export default function App() {
           exportVideoProgressLabel.textContent = `Merender frame ${i + 1}/${totalFrames}...`;
         }
 
+        // ==== 4. Encode audio (kalau ada) — loadedAudioBuffer adalah AudioBuffer utuh hasil decode
+        // saat upload (dipakai juga buat waveform & preview), jadi tinggal dipotong-potong jadi
+        // chunk kecil & di-feed ke AudioEncoder sebagai AudioData 'f32-planar', dipotong pas di
+        // durationSec yang sama dengan video-nya. Nggak perlu resample — AudioEncoder dikonfigurasi
+        // pakai sampleRate/numberOfChannels asli buffer-nya (lihat findSupportedAudioConfig). ====
+        if (audioEncoder && loadedAudioBuffer) {
+          exportVideoProgressLabel.textContent = 'Merender audio...';
+          const channels = loadedAudioBuffer.numberOfChannels;
+          const sampleRate = loadedAudioBuffer.sampleRate;
+          const channelData: Float32Array[] = [];
+          for (let c = 0; c < channels; c++) channelData.push(loadedAudioBuffer.getChannelData(c));
+          const totalAudioFrames = Math.min(loadedAudioBuffer.length, Math.round(durationSec * sampleRate));
+          const CHUNK_FRAMES = 4096;
+
+          for (let start = 0; start < totalAudioFrames; start += CHUNK_FRAMES) {
+            const frameCount = Math.min(CHUNK_FRAMES, totalAudioFrames - start);
+            // Layout 'f32-planar': semua sample channel 0 dulu berurutan, baru channel 1, dst.
+            const planar = new Float32Array(frameCount * channels);
+            for (let c = 0; c < channels; c++) {
+              planar.set(channelData[c].subarray(start, start + frameCount), c * frameCount);
+            }
+            const audioData = new AudioData({
+              format: 'f32-planar',
+              sampleRate,
+              numberOfFrames: frameCount,
+              numberOfChannels: channels,
+              timestamp: Math.round((start / sampleRate) * 1_000_000),
+              data: planar,
+            });
+            audioEncoder.encode(audioData);
+            audioData.close();
+          }
+
+          await audioEncoder.flush();
+        }
+
         await encoder.flush();
         muxer.finalize();
 
@@ -1555,6 +1631,7 @@ export default function App() {
         alert(`Gagal export video. Coba lagi.\n\nDetail: ${detail}`);
       } finally {
         encoder.close();
+        audioEncoder?.close();
         elapsed = originalElapsed;
         renderDuration();
         if (wasPlaying) startTick();
