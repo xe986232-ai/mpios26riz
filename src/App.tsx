@@ -236,18 +236,29 @@ export default function App() {
     // supaya video hasil export ikut morph yang sama persis.
     const MORPH_DURATION_MS = 480;
     const MORPH_EASE = 'cubic-bezier(.22,1,.36,1)';
+    // Ukuran "istirahat" Music Player pas full terbuka — SAMA kayak sebelumnya (scale .78 dari
+    // ukuran natural #player), bukan 100%. Ini juga yang bikin fade-out Control Center pas
+    // (area yang ketutup player gak lebih besar dari desain awal, jadi gak ada yang "ketinggalan").
+    const PLAYER_REST_SCALE = 0.78;
 
+    // Ngasih delta translate + scale START (posisi/ukuran kartu) relatif ke TARGET akhir yang
+    // ukurannya PLAYER_REST_SCALE dari ukuran natural #player (bukan 100%) — biar morph berhenti
+    // di ukuran yang sama persis kayak versi sebelum ada animasi container-transform ini.
     const getCardMorphDelta = (fromEl: Element, toEl: HTMLElement) => {
       const prevTransform = toEl.style.transform;
-      toEl.style.transform = 'none'; // ukur rect "natural" #player, lepas dari transform yg lagi jalan
+      toEl.style.transform = 'none'; // ukur rect "natural" (scale 1) #player, lepas dari transform yg lagi jalan
       const fromRect = fromEl.getBoundingClientRect();
       const toRect = toEl.getBoundingClientRect();
       toEl.style.transform = prevTransform;
+      const rawScaleX = toRect.width > 0 ? fromRect.width / toRect.width : 1;
+      const rawScaleY = toRect.height > 0 ? fromRect.height / toRect.height : 1;
       return {
+        // Center titik tengah kartu vs #player natural — TETAP sama walau target akhirnya
+        // di-scale .78, karena scale dari titik tengah (transform-origin: center) gak geser center-nya.
         dx: fromRect.left + fromRect.width / 2 - (toRect.left + toRect.width / 2),
         dy: fromRect.top + fromRect.height / 2 - (toRect.top + toRect.height / 2),
-        scaleX: toRect.width > 0 ? fromRect.width / toRect.width : 1,
-        scaleY: toRect.height > 0 ? fromRect.height / toRect.height : 1,
+        startScaleX: rawScaleX / PLAYER_REST_SCALE,
+        startScaleY: rawScaleY / PLAYER_REST_SCALE,
       };
     };
 
@@ -323,17 +334,17 @@ export default function App() {
       clearActiveMorphHandler();
 
       stage.classList.add('open'); // set state akhir dulu (opacity:1, pointer-events, dst)
-      const { dx, dy, scaleX, scaleY } = getCardMorphDelta(audioCard, playerWrapEl);
+      const { dx, dy, startScaleX, startScaleY } = getCardMorphDelta(audioCard, playerWrapEl);
 
       // Invert: taruh player PAS di posisi & ukuran kartu (kecil) dulu, tanpa transisi...
       playerWrapEl.style.transition = 'none';
-      playerWrapEl.style.transform = `translate(${dx}px, ${dy}px) scale(${scaleX}, ${scaleY})`;
+      playerWrapEl.style.transform = `translate(${dx}px, ${dy}px) scale(${startScaleX}, ${startScaleY})`;
       playerWrapEl.style.opacity = '1';
       void playerWrapEl.offsetWidth; // force reflow biar transform di atas ke-apply dulu
 
-      // ...baru animasiin balik ke posisi & ukuran aslinya -> kerasa "melebar" dari kartu.
+      // ...baru animasiin balik ke ukuran "istirahat" aslinya (scale .78) -> kerasa "melebar" dari kartu.
       playerWrapEl.style.transition = `transform ${MORPH_DURATION_MS}ms ${MORPH_EASE}`;
-      playerWrapEl.style.transform = 'translate(0px, 0px) scale(1, 1)';
+      playerWrapEl.style.transform = `translate(0px, 0px) scale(${PLAYER_REST_SCALE}, ${PLAYER_REST_SCALE})`;
 
       const onMorphEnd = (ev: TransitionEvent) => {
         if (ev.target !== playerWrapEl || ev.propertyName !== 'transform') return;
@@ -385,11 +396,11 @@ export default function App() {
         return;
       }
 
-      const { dx, dy, scaleX, scaleY } = getCardMorphDelta(audioCard, playerWrapEl);
+      const { dx, dy, startScaleX, startScaleY } = getCardMorphDelta(audioCard, playerWrapEl);
 
-      // Pastiin mulai dari ukuran penuh (translate(0) scale(1)) tanpa transisi dulu...
+      // Pastiin mulai dari ukuran "istirahat" (translate(0) scale(.78)) tanpa transisi dulu...
       playerWrapEl.style.transition = 'none';
-      playerWrapEl.style.transform = 'translate(0px, 0px) scale(1, 1)';
+      playerWrapEl.style.transform = `translate(0px, 0px) scale(${PLAYER_REST_SCALE}, ${PLAYER_REST_SCALE})`;
       playerWrapEl.style.opacity = '1';
       void playerWrapEl.offsetWidth; // force reflow
 
@@ -399,7 +410,7 @@ export default function App() {
       hint.textContent = 'Klik kartu audio kanan atas untuk membuka Music Player';
 
       playerWrapEl.style.transition = `transform ${MORPH_DURATION_MS}ms ${MORPH_EASE}, opacity ${MORPH_DURATION_MS}ms ease`;
-      playerWrapEl.style.transform = `translate(${dx}px, ${dy}px) scale(${scaleX}, ${scaleY})`;
+      playerWrapEl.style.transform = `translate(${dx}px, ${dy}px) scale(${startScaleX}, ${startScaleY})`;
       playerWrapEl.style.opacity = '0';
 
       const onMorphEnd = (ev: TransitionEvent) => {
@@ -1741,8 +1752,8 @@ export default function App() {
             // di eased=0 menuju (translate=0, scale=1) di eased=1 -> kerasa "melebar dari kartu".
             const dx = exportMorphDelta.dx * (1 - eased);
             const dy = exportMorphDelta.dy * (1 - eased);
-            const sx = exportMorphDelta.scaleX + (1 - exportMorphDelta.scaleX) * eased;
-            const sy = exportMorphDelta.scaleY + (1 - exportMorphDelta.scaleY) * eased;
+            const sx = exportMorphDelta.startScaleX + (PLAYER_REST_SCALE - exportMorphDelta.startScaleX) * eased;
+            const sy = exportMorphDelta.startScaleY + (PLAYER_REST_SCALE - exportMorphDelta.startScaleY) * eased;
             playerWrapEl.style.transform = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px) scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`;
           } else {
             playerWrapEl.style.transform = 'none';
