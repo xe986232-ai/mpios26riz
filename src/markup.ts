@@ -122,7 +122,7 @@ export const STAGE_MARKUP = `
     <div class="player" id="player"><svg width="336" height="600" viewBox="0 0 336 600" fill="none" xmlns="http://www.w3.org/2000/svg">
 <path id="cardBgRect" d="" fill="white" fill-opacity="0.08"/><path id="cardBorderRect" d="" fill="none" stroke="url(#mpBorder)" stroke-width="0.75"/>
 <clipPath id="albumArtClip"><path id="albumArtClipPath" d="M27 27 H309 V309 H27 Z"/></clipPath>
-<g id="albumArtPlaceholder" opacity="0.25" filter="url(#filter0_d_7_122)">
+<g id="albumArtPlaceholder" opacity="0.25">
 <path id="albumArtPlaceholderPath" d="M27 27 H309 V309 H27 Z" fill="white"/>
 </g>
 <image id="albumArtImage" x="27" y="27" width="282" height="282" clip-path="url(#albumArtClip)" preserveAspectRatio="xMidYMid slice" opacity="0" href="" xlink:href=""/>
