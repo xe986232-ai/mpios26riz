@@ -1665,9 +1665,9 @@ export default function App() {
     applyStageTransform();
     applyMusicFont();
     setBorderRotation(DEFAULTS.rotate);
-    // Buka player otomatis supaya perubahan customize langsung terlihat
-    stage.classList.add('open');
-    hint.textContent = 'Klik di mana saja pada HP untuk kembali ke Control Center';
+    // NOTE: dulu di sini ada `stage.classList.add('open')` biar player kebuka otomatis
+    // pas load (buat preview customize). Sengaja DIHAPUS supaya Control Center yang
+    // muncul duluan — bukanya sekarang ditangani auto-tap 3 detik di atas.
 
     return () => {
       stopTick();
