@@ -1499,6 +1499,30 @@ export default function App() {
       void exportVideo(durationSec);
     });
 
+    // Aproksimasi manual dari @keyframes iconBounce (App.css) — dipakai buat "pop" ikon play/pause
+    // pas Export Video, karena animasi CSS beneran nggak jalan di loop render yang virtual-time ini.
+    function iconBounceScale(tSecSinceTrigger: number): number {
+      const dur = 0.5;
+      if (tSecSinceTrigger < 0 || tSecSinceTrigger > dur) return 1;
+      const p = tSecSinceTrigger / dur;
+      const stops: Array<[number, number]> = [
+        [0, 1],
+        [0.3, 1.32],
+        [0.55, 0.85],
+        [0.75, 1.1],
+        [1, 1],
+      ];
+      for (let i = 0; i < stops.length - 1; i++) {
+        const [p0, v0] = stops[i];
+        const [p1, v1] = stops[i + 1];
+        if (p >= p0 && p <= p1) {
+          const localT = (p - p0) / (p1 - p0);
+          return v0 + (v1 - v0) * localT;
+        }
+      }
+      return 1;
+    }
+
     async function exportVideo(requestedDurationSec: number) {
       if (typeof VideoEncoder === 'undefined') {
         alert('Browser ini belum mendukung WebCodecs (VideoEncoder). Coba pakai Chrome/Edge versi terbaru.');
@@ -1555,6 +1579,12 @@ export default function App() {
       const wasPlaying = !audioPreviewEl.paused;
       const originalPlayerOpacity = playerWrapEl.style.opacity;
       const originalPlayerTransform = playerWrapEl.style.transform;
+      const originalPlayIconOpacity = playIcon.style.opacity;
+      const originalPauseIconOpacity = pauseIcon.style.opacity;
+      const originalWidgetPlayIconOpacity = widgetPlayIcon.style.opacity;
+      const originalWidgetPauseIconOpacity = widgetPauseIcon.style.opacity;
+      const originalPlayPauseGroupTransform = playPauseIconGroup.style.transform;
+      const originalWidgetPlayPauseGroupTransform = widgetPlayPauseIconGroup.style.transform;
       stopTick();
 
       // Warna solid buat nimpa bagian transparan kartu (lihat catatan di deklarasi ctrlExportVideoBg
@@ -1609,6 +1639,21 @@ export default function App() {
           const eased = 1 - Math.pow(1 - openProgress, 2);
           playerWrapEl.style.opacity = String(eased);
           playerWrapEl.style.transform = `scale(${(0.72 + (0.78 - 0.72) * eased).toFixed(4)})`;
+
+          // ==== 1c. Ikon play/pause (Control Center & Music Player) — video export ini dianggap
+          // audio-nya "main" dari detik 0 (makanya di-encode ke video), jadi ikon pause yang tampil
+          // sepanjang video, bukan ikut kondisi live audioPreviewEl (yang nggak dipakai di loop ini).
+          // Kalau memang belum ada audio yang di-upload, biarin ikon play default (nggak ada yang main).
+          const hasAudioForIcon = !!loadedAudioBuffer;
+          playIcon.style.opacity = hasAudioForIcon ? '0' : '1';
+          pauseIcon.style.opacity = hasAudioForIcon ? '1' : '0';
+          widgetPlayIcon.style.opacity = hasAudioForIcon ? '0' : '1';
+          widgetPauseIcon.style.opacity = hasAudioForIcon ? '1' : '0';
+          if (hasAudioForIcon) {
+            const bounceScale = iconBounceScale(tSec).toFixed(4);
+            playPauseIconGroup.style.transform = `scale(${bounceScale})`;
+            widgetPlayPauseIconGroup.style.transform = `scale(${bounceScale})`;
+          }
 
           // ==== 2. Capture frame kanvas (reuse pipeline yang sama dengan Export Frame, tapi kali ini
           // di-flatten dulu ke videoBackgroundColor karena MP4 nggak punya alpha channel) ====
@@ -1697,6 +1742,12 @@ export default function App() {
         renderDuration();
         playerWrapEl.style.opacity = originalPlayerOpacity;
         playerWrapEl.style.transform = originalPlayerTransform;
+        playIcon.style.opacity = originalPlayIconOpacity;
+        pauseIcon.style.opacity = originalPauseIconOpacity;
+        widgetPlayIcon.style.opacity = originalWidgetPlayIconOpacity;
+        widgetPauseIcon.style.opacity = originalWidgetPauseIconOpacity;
+        playPauseIconGroup.style.transform = originalPlayPauseGroupTransform;
+        widgetPlayPauseIconGroup.style.transform = originalWidgetPlayPauseGroupTransform;
         if (wasPlaying) startTick();
         exportVideoBtn.disabled = false;
         exportFrameBtn.disabled = false;
