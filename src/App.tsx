@@ -1201,64 +1201,24 @@ export default function App() {
       });
     }
 
-    // ==== Optimasi Export Video: elemen yang BENERAN berubah tiap frame di #player cuma 3 —
-    // timeElapsed, timeRemaining (text), progressFill (rect, cuma atribut width). Semua elemen
-    // lain di #player (art, judul, ikon, dsb) dan SELURUH #cc statis sepanjang satu proses
-    // export (isOpen dikunci sebelum loop mulai, tidak pernah berubah lagi di dalamnya).
-    // Jadi: #cc & bagian statis #player cukup di-rasterize SEKALI (di-cache), tiap frame cuma
-    // rasterize ULANG SVG kecil berisi 3 elemen dinamis itu doang, lalu di-composite di atas
-    // cache-nya. Export Frame (single-shot) TIDAK pakai cache ini — perilakunya persis seperti
-    // sebelumnya (rasterize penuh), supaya tidak ada risiko regresi di jalur itu.
-    const PLAYER_DYNAMIC_IDS = ['timeElapsed', 'timeRemaining', 'progressFill'];
-
-    // Sembunyikan 3 elemen dinamis dari clone → sisanya (statis) yang di-rasterize jadi "base".
-    function hideDynamicPlayerElements(root: SVGSVGElement) {
-      PLAYER_DYNAMIC_IDS.forEach((id) => {
-        const el = root.querySelector('#' + id);
-        if (el) el.setAttribute('display', 'none');
-      });
-    }
-
-    // Kebalikannya: sembunyikan SEMUA KECUALI 3 elemen dinamis (+ ancestor-nya biar nggak ikut
-    // ke-hide) → sisanya jadi SVG kecil transparan berisi cuma teks waktu & progress bar.
-    function isolateDynamicPlayerElements(root: SVGSVGElement) {
-      const keepEls = new Set<Element>();
-      PLAYER_DYNAMIC_IDS.forEach((id) => {
-        const el = root.querySelector('#' + id);
-        if (el) keepEls.add(el);
-      });
-      const keepAncestors = new Set<Element>();
-      keepEls.forEach((el) => {
-        let p: Element | null = el.parentElement;
-        while (p && p !== (root as Element)) {
-          keepAncestors.add(p);
-          p = p.parentElement;
-        }
-      });
-      root.querySelectorAll('*').forEach((el) => {
-        const tag = el.tagName.toLowerCase();
-        // <defs> & isinya (gradient/clip-path/filter) nggak pernah dirender langsung, jadi
-        // dibiarin apa adanya — aman & nggak perlu ikut disortir keep/hide.
-        if (tag === 'defs' || tag === 'style' || el.closest('defs')) return;
-        if (keepEls.has(el) || keepAncestors.has(el)) return;
-        el.setAttribute('display', 'none');
-      });
-    }
-
-    // Cache lintas-frame, dibuat baru tiap kali exportVideo() dipanggil (lihat di bawah) —
-    // hidup cuma selama SATU proses export, jadi aman dari state basi antar-export.
+    // ==== Optimasi Export Video: #cc statis sepanjang satu proses export (isOpen dikunci sebelum
+    // loop mulai, tidak pernah berubah lagi di dalamnya) → cukup di-rasterize SEKALI, dipakai ulang
+    // tiap frame. #player TIDAK ikut di-cache/di-pecah (base+overlay) lagi — pendekatan itu sempat
+    // dicoba tapi bikin hasil render jadi putih polos di device asli (kemungkinan besar gara-gara
+    // cascade CSS pada elemen SVG yang di-hide satu-satu berlaku beda dari yang diharapkan di
+    // browser sungguhan, sesuatu yang gak ketauan dari sini karena gak ada browser buat ngetes
+    // langsung). #player tetap full-render tiap frame kayak semula — supaya export dijamin BENAR
+    // dulu, baru nanti dioptimasi lagi lebih hati-hati (diuji bertahap) kalau CC-caching aja belum
+    // cukup cepet. Export Frame (single-shot) tidak kepengaruh sama sekali oleh cache ini.
     type StageRenderCache = {
       ccCanvas: HTMLCanvasElement | null;
-      playerBaseCanvas: HTMLCanvasElement | null;
-      playerBaseW: number;
-      playerBaseH: number;
     };
 
     // Capture SATU frame kanvas (state DOM saat fungsi ini dipanggil) → canvas EXPORT_W x EXPORT_H.
     // Dipakai baik oleh Export Frame maupun Export Video (dipanggil berulang per frame, dengan
     // state — elapsed, dll — sudah di-advance manual sebelum tiap panggilan).
-    // `cache` opsional: kalau diisi (dipakai Export Video), #cc & bagian statis #player di-reuse
-    // dari rasterize sebelumnya alih-alih di-rasterize ulang tiap panggilan.
+    // `cache` opsional: kalau diisi (dipakai Export Video), #cc di-reuse dari rasterize sebelumnya
+    // alih-alih di-rasterize ulang tiap panggilan.
     async function captureStageCanvas(cache?: StageRenderCache): Promise<HTMLCanvasElement> {
       const rect = stageFrame.getBoundingClientRect();
       // Guard: kalau .stage-frame lagi berukuran 0 (misal ke-trigger saat belum ke-render/tersembunyi),
@@ -1304,35 +1264,10 @@ export default function App() {
       if (playerOpacity > 0.003) {
         outPlayerW = Math.max(1, Math.round(playerRect.width * scale));
         outPlayerH = Math.max(1, Math.round(playerRect.height * scale));
-
-        if (cache) {
-          // Base (semua elemen statis #player) di-rasterize sekali & dipakai ulang tiap frame.
-          if (!cache.playerBaseCanvas || cache.playerBaseW !== outPlayerW || cache.playerBaseH !== outPlayerH) {
-            const baseClone = playerSvgEl.cloneNode(true) as SVGSVGElement;
-            hideDynamicPlayerElements(baseClone);
-            cache.playerBaseCanvas = await rasterizeNode(baseClone, 336, 600, outPlayerW / 336);
-            cache.playerBaseW = outPlayerW;
-            cache.playerBaseH = outPlayerH;
-          }
-          // Overlay (3 elemen dinamis doang) di-rasterize tiap frame — SVG-nya jauh lebih kecil/
-          // simpel daripada player penuh, jadi jauh lebih murah.
-          const overlayClone = playerSvgEl.cloneNode(true) as SVGSVGElement;
-          isolateDynamicPlayerElements(overlayClone);
-          const overlayCanvas = await rasterizeNode(overlayClone, 336, 600, outPlayerW / 336);
-
-          const composed = document.createElement('canvas');
-          composed.width = outPlayerW;
-          composed.height = outPlayerH;
-          const composedCtx = composed.getContext('2d');
-          if (!composedCtx) throw new Error('Canvas context tidak tersedia');
-          composedCtx.drawImage(cache.playerBaseCanvas, 0, 0);
-          composedCtx.drawImage(overlayCanvas, 0, 0);
-          playerCanvas = composed;
-        } else {
-          // Jalur lama (Export Frame, single-shot) — tidak diubah sama sekali.
-          const playerClone = playerSvgEl.cloneNode(true) as SVGSVGElement;
-          playerCanvas = await rasterizeNode(playerClone, 336, 600, outPlayerW / 336);
-        }
+        // #player full-render tiap frame seperti semula (lihat catatan di atas captureStageCanvas
+        // soal kenapa base+overlay splitting untuk #player di-rollback).
+        const playerClone = playerSvgEl.cloneNode(true) as SVGSVGElement;
+        playerCanvas = await rasterizeNode(playerClone, 336, 600, outPlayerW / 336);
       }
 
       const out = document.createElement('canvas');
@@ -1562,13 +1497,11 @@ export default function App() {
       });
       encoder.configure(desiredConfig);
 
-      // Cache baru per proses export — #cc & bagian statis #player di-rasterize sekali di frame
-      // pertama, dipakai ulang di 599 frame sisanya (lihat captureStageCanvas di atas).
+      // Cache baru per proses export — #cc di-rasterize sekali di frame pertama, dipakai ulang
+      // di 599 frame sisanya (lihat captureStageCanvas di atas). #player sengaja TIDAK di-cache
+      // dulu (lihat catatan di captureStageCanvas).
       const renderCache: StageRenderCache = {
         ccCanvas: null,
-        playerBaseCanvas: null,
-        playerBaseW: 0,
-        playerBaseH: 0,
       };
 
       try {
