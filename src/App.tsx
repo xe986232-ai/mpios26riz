@@ -1,16 +1,16 @@
 import { useEffect, useRef } from 'react';
-import html2canvas from 'html2canvas';
 import JSZip from 'jszip';
 import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { STAGE_MARKUP, PANELS_MARKUP } from './markup';
 
 // ==== Helper untuk Export Frame ====
-// html2canvas TIDAK BISA render <video> (cuma nge-skip/kosong) dan TIDAK support
-// backdrop-filter (dipakai buat efek blur wallpaper ala Control Center/iOS).
-// Solusinya: sebelum di-screenshot, kita "bekukan" frame video saat ini jadi gambar
-// statis, dan kita hitung sendiri hasil blur-nya pakai Canvas 2D (ctx.filter = blur),
-// lalu suntikkan sebagai <img> pengganti supaya html2canvas tinggal nge-capture
-// gambar biasa (yang memang didukung penuh).
+// Rasterisasi TIDAK LAGI pakai html2canvas (reimplementasi CSS/layout sendiri pakai JS —
+// nggak akurat, nggak dukung backdrop-filter, nggak bisa render <video>, lambat karena
+// re-walk & recompute style tiap node tiap frame). Video & backdrop-filter tetap harus
+// "dibekukan" jadi gambar statis dulu (sama seperti sebelumnya) karena keduanya memang
+// nggak bisa dituangkan ke dokumen SVG statis apa adanya — tapi rasterisasi FINAL-nya
+// sekarang lewat renderer SVG asli browser (lihat rasterizeNode di bawah), bukan lewat
+// interpreter CSS buatan pihak ketiga.
 
 // Ambil frame video yang sedang tampil saat ini, ditempatkan ke kotak targetW x targetH
 // dengan logika object-fit: cover (sama seperti CSS video wallpaper aslinya).
@@ -88,6 +88,115 @@ function seekVideoTo(video: HTMLVideoElement, time: number): Promise<void> {
     video.addEventListener('seeked', onSeeked);
     video.currentTime = time;
   });
+}
+
+// ==== Rasterisasi native: ganti html2canvas dengan renderer SVG asli browser ====
+// Ide: apa pun yang mau di-capture (baik elemen <svg> asli, maupun elemen HTML biasa yang
+// isinya sudah "dibekukan"/statis) dibungkus jadi SATU dokumen SVG mandiri (kalau perlu
+// lewat <foreignObject>), CSS halaman ini disuntikkan sebagai <style> di dalamnya, lalu
+// dokumen itu di-serialize ke teks XML dan dirender lewat <img> — yang menggambar jadinya
+// ENGINE SVG BAWAAN BROWSER sendiri, sama persis dengan yang dipakai buat nampilin di layar,
+// bukan reimplementasi CSS/layout pihak ketiga kayak html2canvas.
+
+let cachedInlineCss: string | null = null;
+
+// Ambil semua CSS text dari stylesheet yang sudah ke-load di halaman ini (App.css, dst).
+// Di-cache karena isinya nggak berubah selama satu sesi render/export berlangsung — dipanggil
+// bisa ratusan/ribuan kali (sekali per frame video) tanpa perlu baca ulang document.styleSheets.
+function getInlineCss(): string {
+  if (cachedInlineCss !== null) return cachedInlineCss;
+  const chunks: string[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    try {
+      const rules = sheet.cssRules;
+      if (!rules) continue;
+      for (const rule of Array.from(rules)) chunks.push(rule.cssText);
+    } catch {
+      // Stylesheet cross-origin yang nggak bisa dibaca isinya — dilewati saja. Nggak relevan
+      // di project ini karena semua CSS-nya berasal dari bundle Vite sendiri (same-origin).
+    }
+  }
+  cachedInlineCss = chunks.join('\n');
+  return cachedInlineCss;
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Gagal memuat hasil render SVG sebagai gambar'));
+    img.src = src;
+  });
+}
+
+// Merender SATU node (elemen <svg> asli, ATAU elemen HTML biasa yang isinya sudah statis)
+// jadi HTMLCanvasElement berukuran outputW x outputH (= nativeW/nativeH * scale), lewat
+// renderer SVG bawaan browser — bukan html2canvas.
+//
+// - Kalau node-nya sendiri sudah berupa <svg> (mis. #cc, #player): dipakai langsung sebagai
+//   dokumen, tinggal dikunci width/height/viewBox-nya & disuntik <style>.
+// - Kalau node-nya elemen HTML biasa (mis. .stage-frame, yang di dalamnya ada <svg> lagi):
+//   dibungkus lewat <svg><foreignObject> supaya bisa jadi satu dokumen SVG yang valid.
+//
+// PENTING: kalau node adalah elemen HTML, fungsi ini MEMINDAHKAN node tsb (appendChild) ke
+// wrapper sementara. Ini aman untuk kasus reuseClone (Export Video) karena yang dipindah
+// cuma referensi DOM-nya — konten & child element (video/backdrop img yang di-update tiap
+// frame) tetap sama, cuma "rumahnya" (parent) yang berpindah tiap kali fungsi ini dipanggil.
+async function rasterizeNode(
+  node: Element,
+  nativeW: number,
+  nativeH: number,
+  scale: number
+): Promise<HTMLCanvasElement> {
+  const css = getInlineCss();
+  const outW = Math.max(1, Math.round(nativeW * scale));
+  const outH = Math.max(1, Math.round(nativeH * scale));
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const xhtmlNS = 'http://www.w3.org/1999/xhtml';
+
+  let root: SVGSVGElement;
+  if (node instanceof SVGSVGElement) {
+    root = node;
+    root.setAttribute('width', String(outW));
+    root.setAttribute('height', String(outH));
+    if (!root.getAttribute('viewBox')) {
+      root.setAttribute('viewBox', `0 0 ${nativeW} ${nativeH}`);
+    }
+  } else {
+    root = document.createElementNS(svgNS, 'svg');
+    root.setAttribute('width', String(outW));
+    root.setAttribute('height', String(outH));
+    root.setAttribute('viewBox', `0 0 ${nativeW} ${nativeH}`);
+    const foreignObject = document.createElementNS(svgNS, 'foreignObject');
+    foreignObject.setAttribute('x', '0');
+    foreignObject.setAttribute('y', '0');
+    foreignObject.setAttribute('width', String(nativeW));
+    foreignObject.setAttribute('height', String(nativeH));
+    (node as HTMLElement).setAttribute('xmlns', xhtmlNS);
+    foreignObject.appendChild(node);
+    root.appendChild(foreignObject);
+  }
+
+  root.setAttribute('xmlns', svgNS);
+  const styleEl = document.createElementNS(svgNS, 'style');
+  styleEl.textContent = css;
+  root.insertBefore(styleEl, root.firstChild);
+
+  const xml = new XMLSerializer().serializeToString(root);
+  const blob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await loadImage(url);
+    const canvas = document.createElement('canvas');
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas context tidak tersedia');
+    ctx.drawImage(img, 0, 0, outW, outH);
+    return canvas;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 export default function App() {
@@ -1153,14 +1262,12 @@ export default function App() {
       await Promise.all([waitImgLoaded(ctx.videoImgEl), waitImgLoaded(ctx.backdropImgEl), waitImgLoaded(ctx.afterImgEl)]);
 
       try {
-        // ==== 3. Screenshot clone KANVAS PENUH (frameClone, 9:16) yang sudah "dibekukan"
-        // (video jadi gambar, blur sudah di-bake manual). Border-radius + overflow:hidden milik
-        // .stage-frame ikut ter-capture apa adanya, jadi sudut yang membulat otomatis transparan. ====
-        const captured = await html2canvas(ctx.frameClone, {
-          backgroundColor: null,
-          useCORS: true,
-          scale,
-        });
+        // ==== 3. Rasterisasi clone KANVAS PENUH (frameClone, 9:16) yang sudah "dibekukan"
+        // (video jadi gambar, blur sudah di-bake manual) lewat renderer SVG asli browser
+        // (rasterizeNode), BUKAN html2canvas. Border-radius + overflow:hidden milik .stage-frame
+        // ikut ter-capture apa adanya (lewat CSS yang disuntik ke <style>), jadi sudut yang
+        // membulat otomatis transparan. ====
+        const captured = await rasterizeNode(ctx.frameClone, rect.width, rect.height, scale);
 
         // ==== 4. Output dikunci persis 1080x1920 (9:16) — SAMA PERSIS dengan apa yang tampak di kanvas,
         // tanpa crop tambahan ke area layar HP lagi. Kanvas-lah yang jadi patokan, bukan konten di dalamnya. ====
@@ -1225,7 +1332,7 @@ export default function App() {
 
       try {
         // Komponen Control Center punya wallpaper <video> + backdrop-filter di dalam <foreignObject>,
-        // yang keduanya TIDAK ter-render html2canvas kalau dibiarkan apa adanya — dibekukan dulu jadi
+        // yang keduanya nggak bisa dituangkan apa adanya ke dokumen SVG statis — dibekukan dulu jadi
         // gambar statis (teknik sama seperti captureStageCanvas di atas), khusus untuk komponen ini.
         if (bakeWallpaper && wallpaperVideoEl && wallpaperVideoEl.readyState >= 2) {
           const cloneVideoEl = clone.querySelector<HTMLVideoElement>('.wallpaper-video');
@@ -1268,7 +1375,10 @@ export default function App() {
           if (flatTintPath) flatTintPath.setAttribute('fill-opacity', '0');
         }
 
-        return await html2canvas(clone, { backgroundColor: null, useCORS: true, scale });
+        // `clone` di sini adalah <div class="cc"/"player"> pembungkus <svg> di dalamnya, jadi
+        // rasterizeNode akan otomatis membungkusnya lewat <foreignObject> (lihat cabang else
+        // di rasterizeNode) — sama seperti perlakuan .stage-frame di captureStageCanvas.
+        return await rasterizeNode(clone, nativeW, nativeH, scale);
       } finally {
         document.body.removeChild(wrap);
       }
