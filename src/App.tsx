@@ -260,9 +260,9 @@ export default function App() {
         activeMorphEndHandler = null;
       }
     };
-    cleanupFns.push(clearActiveMorphHandler);
 
     const cleanupFns: Array<() => void> = [];
+    cleanupFns.push(clearActiveMorphHandler);
     const on = <K extends keyof HTMLElementEventMap>(
       el: Element,
       type: K,
