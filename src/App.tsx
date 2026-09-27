@@ -199,6 +199,61 @@ async function rasterizeNode(
   }
 }
 
+// ==== Helper untuk panel Layers (hide/show elemen sebelum Export Frame) ====
+// Toggle di sini mengubah style.display LANGSUNG di elemen asli dalam #stage,
+// jadi tidak perlu ubah apa pun di logika export: rasterizeNode/clone yang sudah
+// ada otomatis ikut menghormati elemen yang disembunyikan.
+const LAYER_SKIP_TAGS = new Set([
+  'STYLE', 'DEFS', 'CLIPPATH', 'LINEARGRADIENT', 'RADIALGRADIENT', 'FILTER',
+  'FECOLORMATRIX', 'FEBLEND', 'FEGAUSSIANBLUR', 'FEOFFSET', 'FEFLOOD', 'FECOMPOSITE',
+  'FEMERGE', 'FEMERGENODE', 'MASK', 'PATTERN', 'METADATA', 'TITLE', 'DESC',
+]);
+
+const LAYER_EYE_OPEN =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const LAYER_EYE_CLOSED =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a19.4 19.4 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a19.5 19.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>';
+
+function escapeLayerLabel(s: string): string {
+  const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  return s.replace(/[&<>"']/g, (c) => map[c]);
+}
+
+let layerUidCounter = 0;
+function renderLayerNode(el: Element, depth: number): string {
+  if (LAYER_SKIP_TAGS.has(el.tagName.toUpperCase())) return '';
+  layerUidCounter++;
+  const uid = 'ly' + layerUidCounter;
+  el.setAttribute('data-layer-uid', uid);
+  const childEls = Array.from(el.children).filter((c) => !LAYER_SKIP_TAGS.has(c.tagName.toUpperCase()));
+  const cls = (el.getAttribute('class') || '').split(' ')[0];
+  const label = el.id || cls || el.tagName.toLowerCase();
+  const tag = el.tagName.toLowerCase();
+  const openClass = depth < 1 ? ' open' : '';
+  const childrenHtml = childEls.length
+    ? '<div class="layer-children">' + childEls.map((c) => renderLayerNode(c, depth + 1)).join('') + '</div>'
+    : '';
+  return (
+    '<div class="layer-node' + openClass + '" data-uid="' + uid + '">' +
+    '<div class="layer-row" style="padding-left:' + (depth * 16 + 8) + 'px">' +
+    (childEls.length
+      ? '<button type="button" class="layer-disclosure" data-role="disclosure">\u25B8</button>'
+      : '<span class="layer-disclosure-spacer"></span>') +
+    '<button type="button" class="layer-eye" data-role="eye">' + LAYER_EYE_OPEN + '</button>' +
+    '<span class="layer-label">' + escapeLayerLabel(label) + '</span>' +
+    '<span class="layer-tag">' + tag + '</span>' +
+    '</div>' + childrenHtml +
+    '</div>'
+  );
+}
+
+function buildLayersPanel(stageEl: HTMLElement, listEl: HTMLElement, countEl: HTMLElement) {
+  layerUidCounter = 0;
+  const roots = Array.from(stageEl.children).filter((c) => !LAYER_SKIP_TAGS.has(c.tagName.toUpperCase()));
+  listEl.innerHTML = roots.map((r) => renderLayerNode(r, 0)).join('');
+  countEl.textContent = layerUidCounter + ' elemen';
+}
+
 export default function App() {
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -235,6 +290,42 @@ export default function App() {
       e.stopPropagation();
       const nowCollapsed = panelStack.classList.toggle('collapsed');
       customizeToggle.classList.toggle('open', !nowCollapsed);
+    });
+
+    // ==== Panel Layers: hide/show elemen di #stage sebelum Export Frame ====
+    const layersToggle = $('layersToggle');
+    const layersPanel = $('layersPanel');
+    const layersList = $('layersList');
+    const layersCount = $('layersCount');
+
+    buildLayersPanel(stage, layersList, layersCount);
+
+    on(layersToggle, 'click', (e: Event) => {
+      e.stopPropagation();
+      const nowCollapsed = layersPanel.classList.toggle('collapsed');
+      layersToggle.classList.toggle('open', !nowCollapsed);
+    });
+
+    on(layersList, 'click', (e: Event) => {
+      const target = e.target as HTMLElement;
+      const disclosureBtn = target.closest<HTMLElement>('[data-role="disclosure"]');
+      if (disclosureBtn) {
+        disclosureBtn.closest('.layer-node')?.classList.toggle('open');
+        return;
+      }
+      const eyeBtn = target.closest<HTMLElement>('[data-role="eye"]');
+      if (eyeBtn) {
+        const node = eyeBtn.closest<HTMLElement>('.layer-node');
+        if (!node) return;
+        const uid = node.getAttribute('data-uid');
+        const targetEl = stage.querySelector<HTMLElement>(`[data-layer-uid="${uid}"]`);
+        if (!targetEl) return;
+        const nowHidden = targetEl.style.display !== 'none';
+        targetEl.style.display = nowHidden ? 'none' : '';
+        node.classList.toggle('hidden-layer', nowHidden);
+        eyeBtn.classList.toggle('is-hidden', nowHidden);
+        eyeBtn.innerHTML = nowHidden ? LAYER_EYE_CLOSED : LAYER_EYE_OPEN;
+      }
     });
 
     const openHandler = (e: Event) => {
@@ -1642,7 +1733,18 @@ export default function App() {
             <span>Customize</span>
             <span className="chevron" id="customizeChevron">⌄</span>
           </button>
+          <button type="button" className="customize-toggle" id="layersToggle">
+            <span>Layers</span>
+            <span className="chevron" id="layersChevron">⌄</span>
+          </button>
           <button type="button" className="export-video-btn" id="exportVideoBtn">Export Video</button>
+        </div>
+        <div className="layers-panel collapsed" id="layersPanel">
+          <div className="layers-panel-header">
+            <span>Layers</span>
+            <span className="layers-count" id="layersCount"></span>
+          </div>
+          <div className="layers-list" id="layersList"></div>
         </div>
         <div className="export-video-progress-wrap" id="exportVideoProgressWrap" style={{ display: 'none' }}>
           <div className="export-video-progress-track">

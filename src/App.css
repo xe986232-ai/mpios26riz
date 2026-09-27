@@ -231,3 +231,53 @@
     100% { transform: scale(1); }
   }
   #playPauseIconGroup.bounce, #widgetPlayPauseIconGroup.bounce { animation: iconBounce .5s cubic-bezier(.34,1.56,.64,1); }
+
+/* ==== Panel Layers (hide/show elemen sebelum Export Frame) ==== */
+.layers-panel {
+  margin-top: 10px;
+  border: 1px solid #3a3a3c;
+  border-radius: 10px;
+  background: #1f1f22;
+  overflow: hidden;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+}
+.layers-panel.collapsed { display: none; }
+.layers-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; font-size: 12px; font-weight: 600; color: #f2f2f7;
+  border-bottom: 1px solid #3a3a3c; background: #242426; flex: none;
+}
+.layers-count { color: #9a9aa0; font-weight: 400; font-size: 11px; }
+.layers-list { overflow-y: auto; padding: 4px 0; }
+.layer-row {
+  display: flex; align-items: center; gap: 6px;
+  padding-top: 4px; padding-bottom: 4px; padding-right: 8px;
+}
+.layer-row:hover { background: #2c2c2e; }
+.layer-disclosure {
+  background: none; border: none; color: #9a9aa0; width: 16px; height: 16px;
+  padding: 0; cursor: pointer; font-size: 10px; flex: none;
+  transform: rotate(0deg); transition: transform .12s ease;
+}
+.layer-disclosure-spacer { width: 16px; flex: none; display: inline-block; }
+.layer-node.open > .layer-row .layer-disclosure { transform: rotate(90deg); }
+.layer-eye {
+  background: none; border: none; padding: 0; width: 18px; height: 18px;
+  cursor: pointer; flex: none; display: flex; align-items: center; justify-content: center;
+  color: #f2f2f7;
+}
+.layer-eye svg { width: 14px; height: 14px; }
+.layer-eye.is-hidden { color: #5a5a5e; }
+.layer-label {
+  font-size: 12px; color: #f2f2f7; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; flex: 1;
+}
+.layer-node.hidden-layer > .layer-row .layer-label { color: #5a5a5e; text-decoration: line-through; }
+.layer-tag {
+  font-size: 9px; color: #9a9aa0; background: #2c2c2e; border-radius: 4px;
+  padding: 1px 5px; flex: none;
+}
+.layer-children { display: none; }
+.layer-node.open > .layer-children { display: block; }
