@@ -1189,6 +1189,32 @@ export default function App() {
       const totalFrames = Math.round(durationSec * VIDEO_FPS);
       const frameDurationUs = Math.round(1_000_000 / VIDEO_FPS);
 
+      // Cek dukungan config encoder DULU sebelum mulai render apa pun, supaya kalau memang codec/resolusi
+      // ini tidak didukung device/browser, errornya jelas dari awal — bukan nyangkut di tengah render
+      // ribuan frame lalu berakhir dengan pesan generic "Gagal export video".
+      const desiredConfig: VideoEncoderConfig = {
+        codec: 'avc1.640028',
+        width: EXPORT_W,
+        height: EXPORT_H,
+        bitrate: 8_000_000,
+        framerate: VIDEO_FPS,
+        hardwareAcceleration: 'prefer-hardware',
+      };
+      try {
+        const support = await VideoEncoder.isConfigSupported(desiredConfig);
+        if (!support.supported) {
+          alert(
+            `Browser/device ini tidak mendukung konfigurasi video ${EXPORT_W}x${EXPORT_H} dengan codec ${desiredConfig.codec}. ` +
+              'Coba pakai Chrome/Edge terbaru di desktop.'
+          );
+          return;
+        }
+      } catch (err) {
+        console.error('Gagal cek dukungan VideoEncoder:', err);
+        alert('Gagal memeriksa dukungan encoder video di browser ini. Coba pakai Chrome/Edge versi terbaru.');
+        return;
+      }
+
       const originalLabel = exportVideoBtn.textContent || 'Export Video (MP4)';
       exportVideoBtn.disabled = true;
       exportFrameBtn.disabled = true;
@@ -1213,14 +1239,7 @@ export default function App() {
         output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
         error: (err) => console.error('VideoEncoder error:', err),
       });
-      encoder.configure({
-        codec: 'avc1.640028',
-        width: EXPORT_W,
-        height: EXPORT_H,
-        bitrate: 8_000_000,
-        framerate: VIDEO_FPS,
-        hardwareAcceleration: 'prefer-hardware',
-      });
+      encoder.configure(desiredConfig);
 
       try {
         for (let i = 0; i < totalFrames; i++) {
@@ -1262,7 +1281,8 @@ export default function App() {
         URL.revokeObjectURL(url);
       } catch (err) {
         console.error('Export video gagal:', err);
-        alert('Gagal export video. Coba lagi.');
+        const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+        alert(`Gagal export video. Coba lagi.\n\nDetail: ${detail}`);
       } finally {
         encoder.close();
         elapsed = originalElapsed;
