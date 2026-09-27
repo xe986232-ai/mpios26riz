@@ -1489,7 +1489,20 @@ export default function App() {
           const canvas = await captureStageCanvas();
 
           // ==== 3. Encode frame ====
-          const frame = new VideoFrame(canvas, {
+          // PENTING: sengaja TIDAK kasih elemen <canvas> langsung ke `new VideoFrame(canvas, ...)`.
+          // Itu jalur yang sebelumnya dipakai, dan di beberapa Chrome/WebView Android jalur ini
+          // kebukti bikin VideoFrame berisi data kosong/putih walau `canvas`-nya sendiri render-nya
+          // BENAR (kebukti dari Export Frame/PNG yang hasilnya normal, lewat toBlob() — jalur beda
+          // dari yang dipakai VideoFrame). Fix: ambil pixel data-nya eksplisit lewat getImageData(),
+          // terus kasih raw buffer RGBA itu ke VideoFrame — jalur ini nggak bergantung ke cara
+          // browser "nge-bridge" elemen <canvas>, jadi lebih konsisten across device.
+          const frameCtx = canvas.getContext('2d', { willReadFrequently: true });
+          if (!frameCtx) throw new Error('Canvas context tidak tersedia saat ambil pixel data frame.');
+          const imageData = frameCtx.getImageData(0, 0, canvas.width, canvas.height);
+          const frame = new VideoFrame(imageData.data, {
+            format: 'RGBA',
+            codedWidth: canvas.width,
+            codedHeight: canvas.height,
             timestamp: i * frameDurationUs,
             duration: frameDurationUs,
           });
