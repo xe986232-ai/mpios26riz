@@ -212,11 +212,18 @@ export default function App() {
 
     const stage = $('stage');
     const hint = $('hint');
+    const playerWrapEl = $<HTMLElement>('player'); // dipakai jg oleh captureStageCanvas & exportVideo di bawah
 
     // Kartu audio kanan atas (buka music player)
     const audioCard = root.querySelector<SVGRectElement>(
       '.cc-hit[x="233"][y="155"]'
     );
+
+    // Delay & durasi transisi auto-buka Music Player — dipakai baik buat timer real-time
+    // (scheduleAutoOpen di bawah) MAUPUN buat nyamain animasi yang sama pas Export Video
+    // (exportVideo, karena loop render-nya deterministik/virtual-time, bukan wall-clock).
+    const AUTO_OPEN_DELAY_MS = 3000;
+    const AUTO_OPEN_TRANSITION_SEC = 0.45; // samain sama `transition: opacity .45s ease` di .player (App.css)
 
     const cleanupFns: Array<() => void> = [];
     const on = <K extends keyof HTMLElementEventMap>(
@@ -296,7 +303,7 @@ export default function App() {
           audioCard.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
           audioCard.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
         }, 130);
-      }, 3000);
+      }, AUTO_OPEN_DELAY_MS);
     };
     const cancelAutoOpen = () => {
       if (autoOpenTimer !== undefined) {
@@ -1236,16 +1243,17 @@ export default function App() {
     // .cc svg > rect:not(.phone-frame)) — di-bake jadi atribut opacity eksplisit di clone, karena
     // clone yang dirender lewat rasterizeNode nanti berdiri sendiri (nggak lagi punya ancestor
     // ".stage.open" buat dicocokkan selector CSS-nya).
-    function bakeCcOpenDimming(ccSvgClone: SVGSVGElement, isOpen: boolean) {
-      if (!isOpen) return; // default (closed) sudah opacity 1 apa adanya, tidak perlu diubah
+    function bakeCcOpenDimming(ccSvgClone: SVGSVGElement, openProgress: number) {
+      if (openProgress <= 0) return; // default (closed) sudah opacity 1 apa adanya, tidak perlu diubah
+      const dimOpacity = String(Math.max(0, 1 - openProgress));
       const clipGroup = ccSvgClone.querySelector('g[clip-path]');
       if (clipGroup) {
         Array.from(clipGroup.children).forEach((child, idx) => {
-          if (idx >= 2) child.setAttribute('opacity', '0'); // nth-child(n+3), 0-based idx>=2
+          if (idx >= 2) child.setAttribute('opacity', dimOpacity); // nth-child(n+3), 0-based idx>=2
         });
       }
       ccSvgClone.querySelectorAll('rect').forEach((r) => {
-        if (!r.classList.contains('phone-frame')) r.setAttribute('opacity', '0');
+        if (!r.classList.contains('phone-frame')) r.setAttribute('opacity', dimOpacity);
       });
     }
 
@@ -1263,10 +1271,8 @@ export default function App() {
       // Render pada skala yang membuat tinggi kanvas pas 1920px; karena .stage-frame terkunci rasio 9:16
       // di CSS, lebarnya otomatis ikut pas ~1080px — hasil export jadi identik dengan kanvas di layar.
       const scale = EXPORT_H / rect.height;
-      const isOpen = stage.classList.contains('open');
 
       const ccWrapEl = $<HTMLElement>('cc');
-      const playerWrapEl = $<HTMLElement>('player');
       const ccSvgEl = ccWrapEl.querySelector<SVGSVGElement>('svg');
       const playerSvgEl = playerWrapEl.querySelector<SVGSVGElement>('svg');
       if (!ccSvgEl || !playerSvgEl) throw new Error('Elemen #cc/#player tidak ditemukan di kanvas.');
@@ -1276,7 +1282,10 @@ export default function App() {
       const playerOpacity = parseFloat(getComputedStyle(playerWrapEl).opacity || '1');
 
       const ccClone = ccSvgEl.cloneNode(true) as SVGSVGElement;
-      bakeCcOpenDimming(ccClone, isOpen);
+      // Progress dimming kartu Control Center disamain sama opacity Music Player saat ini —
+      // baik itu dari toggle manual (0/1 penuh) maupun dari nilai antara yang di-drive manual
+      // per-frame sama exportVideo (biar transisinya kerasa fade bareng, bukan potongan kasar).
+      bakeCcOpenDimming(ccClone, playerOpacity);
       ccClone.querySelectorAll('rect.phone-frame').forEach((r) => r.setAttribute('display', 'none'));
 
       const outCcW = Math.max(1, Math.round(ccRect.width * scale));
@@ -1539,9 +1548,13 @@ export default function App() {
       exportVideoProgressFill.style.width = '0%';
       exportVideoProgressLabel.textContent = `Merender frame 0/${totalFrames}...`;
 
-      // Simpan state elapsed/play asli supaya bisa dikembalikan setelah render selesai
+      // Simpan state elapsed/play & style asli kartu player supaya bisa dikembalikan setelah render
+      // selesai (opacity/transform-nya di-drive manual per-frame di bawah, ngelewatin transisi CSS
+      // biasa, karena loop ini virtual-time/deterministik — bukan animasi wall-clock beneran).
       const originalElapsed = elapsed;
       const wasPlaying = !audioPreviewEl.paused;
+      const originalPlayerOpacity = playerWrapEl.style.opacity;
+      const originalPlayerTransform = playerWrapEl.style.transform;
       stopTick();
 
       // Warna solid buat nimpa bagian transparan kartu (lihat catatan di deklarasi ctrlExportVideoBg
@@ -1584,6 +1597,18 @@ export default function App() {
             const t = (i / VIDEO_FPS) % wallpaperVideoEl.duration;
             await seekVideoTo(wallpaperVideoEl, t);
           }
+
+          // ==== 1b. Drive animasi buka Music Player secara manual, sinkron sama logic auto-open
+          // beneran (AUTO_OPEN_DELAY_MS + AUTO_OPEN_TRANSITION_SEC) — dihitung dari waktu 0 video
+          // ini (anggap "play" ditekan tepat di detik 0), bukan dari `stage` class real-time yang
+          // gak sempet ke-toggle selama loop sinkron ini jalan.
+          const tSec = i / VIDEO_FPS;
+          const rawProgress = (tSec - AUTO_OPEN_DELAY_MS / 1000) / AUTO_OPEN_TRANSITION_SEC;
+          const openProgress = Math.min(1, Math.max(0, rawProgress));
+          // Easing kasar mirip `ease` CSS (ease-out) biar gerakannya nggak linear kaku
+          const eased = 1 - Math.pow(1 - openProgress, 2);
+          playerWrapEl.style.opacity = String(eased);
+          playerWrapEl.style.transform = `scale(${(0.72 + (0.78 - 0.72) * eased).toFixed(4)})`;
 
           // ==== 2. Capture frame kanvas (reuse pipeline yang sama dengan Export Frame, tapi kali ini
           // di-flatten dulu ke videoBackgroundColor karena MP4 nggak punya alpha channel) ====
@@ -1670,6 +1695,8 @@ export default function App() {
         audioEncoder?.close();
         elapsed = originalElapsed;
         renderDuration();
+        playerWrapEl.style.opacity = originalPlayerOpacity;
+        playerWrapEl.style.transform = originalPlayerTransform;
         if (wasPlaying) startTick();
         exportVideoBtn.disabled = false;
         exportFrameBtn.disabled = false;
