@@ -1874,6 +1874,52 @@ export default function App() {
       exportFpsPicker.style.display = 'none';
     });
 
+    // ==== Preview hasil Export Video: overlay dengan <video> + tombol Download di bawahnya ====
+    const exportPreviewOverlay = $('exportPreviewOverlay');
+    const exportPreviewVideo = $<HTMLVideoElement>('exportPreviewVideo');
+    const exportPreviewDownload = $('exportPreviewDownload');
+    const exportPreviewClose = $('exportPreviewClose');
+    let previewUrl: string | null = null;
+    let previewName = 'control-center-video.mp4';
+
+    function closeExportPreview() {
+      exportPreviewVideo.pause();
+      exportPreviewVideo.removeAttribute('src');
+      exportPreviewVideo.load();
+      exportPreviewOverlay.style.display = 'none';
+      document.body.style.overflow = '';
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        previewUrl = null;
+      }
+    }
+
+    function showExportPreview(blob: Blob, fileName: string) {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrl = URL.createObjectURL(blob);
+      previewName = fileName;
+      exportPreviewVideo.src = previewUrl;
+      exportPreviewOverlay.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+      exportPreviewVideo.currentTime = 0;
+      void exportPreviewVideo.play().catch(() => {
+        /* autoplay bisa diblokir browser — user tinggal tekan play di kontrol video */
+      });
+    }
+
+    on(exportPreviewDownload, 'click', (e: Event) => {
+      e.stopPropagation();
+      if (!previewUrl) return;
+      const a = document.createElement('a');
+      a.href = previewUrl;
+      a.download = previewName;
+      a.click();
+    });
+    on(exportPreviewClose, 'click', (e: Event) => {
+      e.stopPropagation();
+      closeExportPreview();
+    });
+
     // Aproksimasi manual dari @keyframes iconBounce (App.css) — dipakai buat "pop" ikon play/pause
     // pas Export Video, karena animasi CSS beneran nggak jalan di loop render yang virtual-time ini.
     function iconBounceScale(tSecSinceTrigger: number): number {
@@ -2140,12 +2186,8 @@ export default function App() {
         muxer.finalize();
 
         const blob = new Blob([target.buffer], { type: 'video/mp4' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `control-center-video-${EXPORT_W}x${EXPORT_H}.mp4`;
-        a.click();
-        URL.revokeObjectURL(url);
+        // Jangan langsung download: tampilkan preview dulu, download lewat tombol di overlay.
+        showExportPreview(blob, `control-center-video-${EXPORT_W}x${EXPORT_H}-${VIDEO_FPS}fps.mp4`);
       } catch (err) {
         console.error('Export video gagal:', err);
         const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
@@ -2185,6 +2227,8 @@ export default function App() {
     // muncul duluan — bukanya sekarang ditangani auto-tap 3 detik di atas.
 
     return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      document.body.style.overflow = '';
       stopTick();
       cleanupFns.forEach((fn) => fn());
     };
@@ -2292,6 +2336,14 @@ export default function App() {
           <div className="export-video-progress-label" id="exportVideoProgressLabel">Merender frame 0/0...</div>
         </div>
         <div className="panel-stack collapsed" id="panelStack" dangerouslySetInnerHTML={{ __html: PANELS_MARKUP }} />
+      </div>
+      <div className="export-preview-overlay" id="exportPreviewOverlay" style={{ display: 'none' }}>
+        <div className="export-preview-title">Preview Hasil Export</div>
+        <video id="exportPreviewVideo" className="export-preview-video" controls playsInline />
+        <div className="export-preview-actions">
+          <button type="button" className="export-preview-download" id="exportPreviewDownload">Download</button>
+          <button type="button" className="export-preview-close" id="exportPreviewClose">Tutup</button>
+        </div>
       </div>
     </div>
   );

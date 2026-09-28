@@ -350,3 +350,23 @@
 }
 .layer-children { display: none; }
 .layer-node.open > .layer-children { display: block; }
+
+/* ==== Overlay preview hasil Export Video ==== */
+.export-preview-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  background: rgba(0,0,0,.88); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.export-preview-title { color: #f2f2f7; font-size: 14px; font-weight: 600; }
+.export-preview-video {
+  max-width: 100%; max-height: calc(100dvh - 190px); aspect-ratio: 9 / 16;
+  border-radius: 16px; background: #000; object-fit: contain;
+}
+.export-preview-actions { display: flex; gap: 10px; width: min(360px, 100%); }
+.export-preview-download, .export-preview-close {
+  flex: 1; padding: 13px 16px; border-radius: 14px; border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.08); color: #f2f2f7; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.export-preview-download { background: #0a84ff; border-color: #0a84ff; flex: 2; }
+.export-preview-download:active, .export-preview-close:active { opacity: .7; }
