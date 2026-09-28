@@ -26,8 +26,9 @@
   /* position: sticky + z-index tinggi + isolation supaya kanvas selalu jadi LAYER PALING ATAS: nempel di atas viewport saat discroll,
      dan konten panel customize yang panjang di bawahnya akan lewat/tertutup DI BELAKANG kanvas, bukan mendorong atau menghimpit kanvas. */
   .stage-col { flex-shrink: 0; margin-left: 0; display: flex; flex-direction: column; gap: 16px; }
+  .stage-sticky { position: sticky; top: 20px; z-index: 30; }
   .stage-frame {
-    position: sticky; top: 20px; z-index: 30; isolation: isolate;
+    position: relative; isolation: isolate;
     width: min(450px, 92vw); aspect-ratio: 9 / 16;
     display: flex; align-items: center; justify-content: center; overflow: hidden;
     border-radius: 28px;
@@ -217,13 +218,47 @@
   .export-fps-opt { background: #0a84ff; border-color: #0a84ff; }
   .export-fps-opt:active, .export-fps-cancel:active { opacity: .7; }
   @media (max-width: 820px) {
-    /* align-items:center di sini supaya kanvas & panel customize tetap center secara horizontal
-       (bukan flex-start bawaan dari .page-wrap versi desktop yang dipakai untuk sticky top-align). */
-    .page-wrap { flex-direction: column; align-items: center; padding: 20px 12px 56px; gap: 52px; }
-    .panel-stack { width: min(360px, 92vw); }
-    .customize-wrap { width: min(360px, 92vw); }
-    /* Di mobile, kanvas sticky nempel sedikit lebih dekat ke atas viewport. */
-    .stage-frame { top: 12px; }
+    /* ==== Layout mobile compact ====
+       Kanvas 9:16 dikecilkan berdasarkan TINGGI viewport (bukan lebar), jadi selalu menyisakan
+       ruang di bawahnya buat menu/panel tanpa harus scroll jauh. Kanvas tetap nempel (sticky) di
+       atas dengan latar solid, jadi panel yang di-scroll lewat di belakangnya, bukan menimpanya. */
+    .page-wrap { flex-direction: column; align-items: center; padding: 0 12px 40px; gap: 10px; }
+    .stage-col { width: 100%; align-items: center; gap: 8px; }
+    .stage-sticky {
+      top: 0; width: calc(100% + 24px); margin: 0 -12px; padding: 8px 0 8px;
+      display: flex; justify-content: center;
+      background: #1b1b1f; box-shadow: 0 6px 12px -6px rgba(0,0,0,.6);
+    }
+    .stage-frame {
+      height: min(44vh, 44dvh, 520px); width: auto; max-width: 92vw;
+      border-radius: 20px;
+    }
+    /* Bar audio jadi ramping & selebar kanvas panel di bawahnya */
+    .audio-canvas-wrap { width: min(360px, 92vw); height: 76px; border-radius: 16px; }
+    .audio-upload-btn { padding: 9px 18px; font-size: 12.5px; border-radius: 10px; }
+    .audio-canvas-info { padding: 6px 10px; gap: 8px; }
+    .audio-replace-btn { padding: 5px 10px; font-size: 11.5px; }
+    /* Panel & toolbar */
+    .customize-wrap { width: min(360px, 92vw); gap: 8px; margin-top: 0; }
+    .panel-stack { width: min(360px, 92vw); gap: 8px; }
+    .customize-toggle { padding: 10px 12px; border-radius: 12px; font-size: 13px; }
+    .toolbar-row { gap: 6px; }
+    .export-video-btn { padding: 10px 8px; border-radius: 12px; font-size: 13px; }
+    .export-fps-picker { margin-top: 6px; padding: 8px 10px; gap: 6px; border-radius: 12px; }
+    .export-fps-opt, .export-fps-cancel { padding: 7px 12px; font-size: 12.5px; }
+    .export-video-progress-wrap { margin-top: 8px; }
+    .album-art-upload-wrap { padding: 10px 12px; margin-bottom: 0; border-radius: 14px; }
+    .album-art-label { font-size: 12.5px; }
+    .album-art-btn { padding: 8px 12px; font-size: 12px; }
+    .control-panel { padding: 12px 14px; border-radius: 16px; }
+    .control-panel h3 { font-size: 14px; }
+    .control-panel .sub { font-size: 11.5px; margin-bottom: 10px; }
+    .control-panel .row { margin-bottom: 10px; }
+    .control-panel .row-head { margin-bottom: 4px; }
+    .control-panel label { font-size: 12.5px; margin-bottom: 4px; }
+    .control-panel input[type="text"], .control-panel select { padding: 7px 10px; font-size: 13px; }
+    .control-panel .reset-btn { padding: 8px; margin-top: 2px; }
+    .layers-panel { margin-top: 6px; max-height: 300px; }
   }
   .knob-wrap { display: flex; justify-content: center; padding: 4px 0 2px; }
   .knob {

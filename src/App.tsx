@@ -2097,8 +2097,10 @@ export default function App() {
   return (
     <div className="page-wrap" ref={rootRef}>
       <div className="stage-col">
-        <div className="stage-frame">
-          <div className="stage" id="stage" dangerouslySetInnerHTML={{ __html: STAGE_MARKUP }} />
+        <div className="stage-sticky">
+          <div className="stage-frame">
+            <div className="stage" id="stage" dangerouslySetInnerHTML={{ __html: STAGE_MARKUP }} />
+          </div>
         </div>
         <div className="audio-canvas-wrap" id="audioCanvasWrap">
           <audio id="audioPreviewEl" preload="none" style={{ display: 'none' }} />
