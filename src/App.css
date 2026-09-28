@@ -205,6 +205,17 @@
   }
   .export-video-btn:active { background: rgba(255,255,255,.12); }
   .export-video-btn:disabled { opacity: .5; cursor: default; }
+  .export-fps-picker {
+    align-items: center; gap: 8px; padding: 10px 12px; margin-top: 10px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.06);
+  }
+  .export-fps-title { font-size: 13px; color: #d1d1d6; margin-right: auto; }
+  .export-fps-opt, .export-fps-cancel {
+    padding: 8px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,.1);
+    background: rgba(255,255,255,.06); color: #f2f2f7; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .export-fps-opt { background: #0a84ff; border-color: #0a84ff; }
+  .export-fps-opt:active, .export-fps-cancel:active { opacity: .7; }
   @media (max-width: 820px) {
     /* align-items:center di sini supaya kanvas & panel customize tetap center secara horizontal
        (bukan flex-start bawaan dari .page-wrap versi desktop yang dipakai untuk sticky top-align). */

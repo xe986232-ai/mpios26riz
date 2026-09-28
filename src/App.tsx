@@ -1730,7 +1730,8 @@ export default function App() {
     // bukan capture real-time), lalu encode tiap frame pakai WebCodecs VideoEncoder + mux jadi .mp4
     // pakai mp4-muxer. Semua di browser, tanpa server/Playwright — hasilnya tetap akurat & konsisten
     // walau device lemot, karena kita yang mengontrol "waktu" tiap frame, bukan menunggu jam asli. ====
-    const VIDEO_FPS = 20; // diturunkan dari 30 → langsung motong ~33% jumlah frame yang harus di-render (masih halus untuk konten sosial media)
+    // FPS sekarang dipilih user pas klik Export Video (30 atau 60), dikirim ke exportVideo(durasi, fps).
+    const DEFAULT_VIDEO_FPS = 30;
     const MAX_EXPORT_DURATION_SEC = 600; // batas atas keamanan (10 menit), bukan lagi patokan utama durasi
     const FALLBACK_EXPORT_DURATION_SEC = 10; // dipakai HANYA kalau belum ada lagu yang di-upload sama sekali
 
@@ -1743,13 +1744,15 @@ export default function App() {
     async function findSupportedVideoConfig(width: number, height: number, fps: number): Promise<VideoEncoderConfig> {
       // Bitrate ikut resolusi & fps (bukan angka fix), di-cap 6-40 Mbps.
       const bitrate = Math.min(40_000_000, Math.max(6_000_000, Math.round(width * height * fps * 0.35)));
+      // 1080x1920 = 8160 macroblock/frame: Level 4.0 cukup sampai ~30fps, 60fps butuh Level 4.2 (0x2A).
+      const lvl = fps > 30 ? '2a' : '28';
       const candidates: VideoEncoderConfig[] = [
-        // avc1.640028 = High Profile Level 4.0 — paling tajam, tapi tidak semua device dukung.
-        { codec: 'avc1.640028', width, height, framerate: fps, bitrate, bitrateMode: 'variable', latencyMode: 'quality' },
-        // avc1.4d0028 = Main Profile Level 4.0 — fallback kedua.
-        { codec: 'avc1.4d0028', width, height, framerate: fps, bitrate, bitrateMode: 'variable', latencyMode: 'quality' },
-        // avc1.42001f = Baseline Profile Level 3.1 — fallback paling kompatibel, hampir semua device dukung.
-        { codec: 'avc1.42001f', width, height, framerate: fps, bitrate, bitrateMode: 'variable', latencyMode: 'quality' },
+        // High Profile — paling tajam, tapi tidak semua device dukung.
+        { codec: 'avc1.6400' + lvl, width, height, framerate: fps, bitrate, bitrateMode: 'variable', latencyMode: 'quality' },
+        // Main Profile — fallback kedua.
+        { codec: 'avc1.4d00' + lvl, width, height, framerate: fps, bitrate, bitrateMode: 'variable', latencyMode: 'quality' },
+        // Baseline Profile — fallback paling kompatibel (level 3.1 hanya dipakai untuk mode 30fps).
+        { codec: fps > 30 ? 'avc1.42002a' : 'avc1.42001f', width, height, framerate: fps, bitrate, bitrateMode: 'variable', latencyMode: 'quality' },
       ];
       for (const config of candidates) {
         try {
@@ -1775,12 +1778,25 @@ export default function App() {
       throw new Error('Tidak ada konfigurasi AudioEncoder (AAC) yang didukung browser ini.');
     }
 
-    on(exportVideoBtn, 'click', async (e: Event) => {
+    // Klik Export Video -> munculin pilihan FPS (30 / 60), baru mulai render setelah dipilih.
+    const exportFpsPicker = $('exportFpsPicker');
+    on(exportVideoBtn, 'click', (e: Event) => {
       e.stopPropagation();
-      // Durasi export sekarang ikut durasi lagu yang di-upload (songDuration), bukan hardcode lagi.
-      // Kalau belum ada lagu yang di-upload (songDuration <= 0), fallback ke FALLBACK_EXPORT_DURATION_SEC.
-      const durationSec = songDuration > 0 ? songDuration : FALLBACK_EXPORT_DURATION_SEC;
-      void exportVideo(durationSec);
+      if (exportVideoBtn.disabled) return;
+      exportFpsPicker.style.display = exportFpsPicker.style.display === 'none' ? 'flex' : 'none';
+    });
+    ([['exportFps30', 30], ['exportFps60', 60]] as Array<[string, number]>).forEach(([id, fps]) => {
+      on($(id), 'click', (e: Event) => {
+        e.stopPropagation();
+        exportFpsPicker.style.display = 'none';
+        // Durasi export ikut durasi lagu yang di-upload (songDuration); fallback kalau belum ada lagu.
+        const durationSec = songDuration > 0 ? songDuration : FALLBACK_EXPORT_DURATION_SEC;
+        void exportVideo(durationSec, fps);
+      });
+    });
+    on($('exportFpsCancel'), 'click', (e: Event) => {
+      e.stopPropagation();
+      exportFpsPicker.style.display = 'none';
     });
 
     // Aproksimasi manual dari @keyframes iconBounce (App.css) — dipakai buat "pop" ikon play/pause
@@ -1807,7 +1823,8 @@ export default function App() {
       return 1;
     }
 
-    async function exportVideo(requestedDurationSec: number) {
+    async function exportVideo(requestedDurationSec: number, fps: number = DEFAULT_VIDEO_FPS) {
+      const VIDEO_FPS = fps;
       if (typeof VideoEncoder === 'undefined') {
         alert('Browser ini belum mendukung WebCodecs (VideoEncoder). Coba pakai Chrome/Edge versi terbaru.');
         return;
@@ -2156,6 +2173,12 @@ export default function App() {
             <span className="chevron" id="layersChevron">⌄</span>
           </button>
           <button type="button" className="export-video-btn" id="exportVideoBtn">Export Video</button>
+        </div>
+        <div className="export-fps-picker" id="exportFpsPicker" style={{ display: 'none' }}>
+          <span className="export-fps-title">Pilih FPS:</span>
+          <button type="button" className="export-fps-opt" id="exportFps30">30 FPS</button>
+          <button type="button" className="export-fps-opt" id="exportFps60">60 FPS</button>
+          <button type="button" className="export-fps-cancel" id="exportFpsCancel">Batal</button>
         </div>
         <div className="layers-panel collapsed" id="layersPanel">
           <div className="layers-panel-header">
