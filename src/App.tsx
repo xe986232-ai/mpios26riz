@@ -756,17 +756,93 @@ export default function App() {
     const ctrlBgOpacity = $<HTMLInputElement>('ctrlBgOpacity');
     const valBgOpacity = $('valBgOpacity');
     const bgImageEl = $<SVGImageElement>('image0_2570_20912');
-    const bgBlurStd = $<SVGFEGaussianBlurElement>('bgBlurStd');
     // Ukuran frame HP (dari markup): 450 x 920 — dipakai buat ngitung ulang posisi image pas di-zoom.
     const BG_FRAME_W = 450;
     const BG_FRAME_H = 920;
     // Simpen href original (wallpaper bawaan) pas mount, biar tombol "Hapus" bisa balikin ke situ.
     const defaultBgHref = bgImageEl.getAttribute('href') || bgImageEl.getAttribute('xlink:href') || '';
 
+    // Sumber asli (sebelum di-blur). Yang tampil di <image> = versi ter-blur (kalau blur > 0).
+    let bgSrc = defaultBgHref;
+    let bgSrcImg: HTMLImageElement | null = null;
+    let bgBlurRaf = 0;
+    let bgBlurToken = 0;
+
     function setBgImage(dataUrl: string) {
-      bgImageEl.setAttribute('href', dataUrl);
-      bgImageEl.setAttribute('xlink:href', dataUrl);
+      bgSrc = dataUrl;
+      bgSrcImg = null;
       removeBgBtn.style.display = dataUrl !== defaultBgHref ? 'block' : 'none';
+      renderBgBlur();
+    }
+
+    // Blur halus: dirender di canvas pada resolusi asli gambar (bukan filter SVG yang di-raster
+    // di resolusi rendah lalu di-upscale -> hasilnya burik/blocky). Gambar digambar sedikit lebih
+    // besar dari canvas (padding) supaya tepi tidak transparan/gelap akibat blur.
+    function renderBgBlur() {
+      const px = Number(ctrlBgBlur.value);
+      if (px <= 0) {
+        bgImageEl.setAttribute('href', bgSrc);
+        bgImageEl.setAttribute('xlink:href', bgSrc);
+        return;
+      }
+      const token = ++bgBlurToken;
+      const run = (img: HTMLImageElement) => {
+        if (token !== bgBlurToken) return;
+        const maxSide = 1600;
+        const k = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.max(1, Math.round(img.naturalWidth * k));
+        const h = Math.max(1, Math.round(img.naturalHeight * k));
+        // px dinyatakan dalam satuan frame HP (450 lebar) -> konversi ke piksel canvas.
+        // Frame memakai 'slice', jadi sisi yang dominan menentukan skala tampil.
+        const shown = Math.max(BG_FRAME_W / w, BG_FRAME_H / h);
+        const sigma = px / shown;
+        const pad = Math.ceil(sigma * 3);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.imageSmoothingQuality = 'high';
+        const supportsFilter = typeof (ctx as unknown as { filter?: unknown }).filter === 'string';
+        if (supportsFilter) {
+          ctx.filter = 'blur(' + sigma.toFixed(2) + 'px)';
+          ctx.drawImage(img, -pad, -pad, w + pad * 2, h + pad * 2);
+          ctx.filter = 'none';
+        } else {
+          // Fallback (Safari lama): downscale bertahap + upscale dengan smoothing bilinear.
+          const f = Math.max(1, sigma * 1.2);
+          const sw = Math.max(2, Math.round((w + pad * 2) / f));
+          const sh = Math.max(2, Math.round((h + pad * 2) / f));
+          const small = document.createElement('canvas');
+          small.width = sw;
+          small.height = sh;
+          const sctx = small.getContext('2d')!;
+          sctx.imageSmoothingQuality = 'high';
+          let cw = w + pad * 2, ch = h + pad * 2;
+          let src: CanvasImageSource = img;
+          while (cw / 2 > sw) {
+            cw = Math.round(cw / 2); ch = Math.round(ch / 2);
+            const step = document.createElement('canvas');
+            step.width = cw; step.height = ch;
+            const c2 = step.getContext('2d')!;
+            c2.imageSmoothingQuality = 'high';
+            c2.drawImage(src, 0, 0, cw, ch);
+            src = step;
+          }
+          sctx.drawImage(src, 0, 0, sw, sh);
+          ctx.drawImage(small, -pad, -pad, w + pad * 2, h + pad * 2);
+        }
+        const url = canvas.toDataURL('image/jpeg', 0.95);
+        bgImageEl.setAttribute('href', url);
+        bgImageEl.setAttribute('xlink:href', url);
+      };
+      if (bgSrcImg && bgSrcImg.complete) {
+        run(bgSrcImg);
+      } else {
+        const img = new Image();
+        img.onload = () => { bgSrcImg = img; run(img); };
+        img.src = bgSrc;
+      }
     }
 
     // Kecilin/gedein gambar background: di zoom < 100%, gambar jadi lebih kecil dari frame HP
@@ -785,10 +861,11 @@ export default function App() {
       valBgZoom.textContent = ctrlBgZoom.value + '%';
     }
 
-    // Blur background pakai <feGaussianBlur> yang nempel di <image>-nya lewat filter="url(#bgBlurFilter)".
+    // Blur background: dirender ulang di canvas (lihat renderBgBlur), di-throttle per frame.
     function applyBgBlur() {
-      bgBlurStd.setAttribute('stdDeviation', ctrlBgBlur.value);
       valBgBlur.textContent = ctrlBgBlur.value + 'px';
+      cancelAnimationFrame(bgBlurRaf);
+      bgBlurRaf = requestAnimationFrame(renderBgBlur);
     }
 
     // Opacity background — 0% = polos hitam (fill .phone-frame), 100% = gambar full kelihatan.
@@ -949,7 +1026,7 @@ export default function App() {
         albumArt: albumArtImage.getAttribute('href') || null,
         bg: {
           // null berarti masih pakai wallpaper bawaan (belum di-custom)
-          image: bgImageEl.getAttribute('href') === defaultBgHref ? null : bgImageEl.getAttribute('href'),
+          image: bgSrc === defaultBgHref ? null : bgSrc,
           zoom: Number(ctrlBgZoom.value),
           blur: Number(ctrlBgBlur.value),
           opacity: Number(ctrlBgOpacity.value),
