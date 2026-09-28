@@ -288,6 +288,7 @@
   .player { z-index: 2; }
   .stage::after { content: ""; position: absolute; left: 5.33%; top: 2.5%; width: 89.33%; height: 95%; border-radius: 13.5% / 6.2%; z-index: 1; pointer-events: none; opacity: 0; background: rgba(0,0,0,0); transition: opacity .5s ease, background .5s ease; }
   .stage.open::after { opacity: 1; background: rgba(0,0,0,.15); }
+  .stage.exporting, .stage.exporting * { transition: none !important; animation: none !important; }
   .hint { position: absolute; bottom: -40px; left: 0; right: 0; text-align: center; color: #8e8e93; font-size: 13px; }
   #playIcon, #pauseIcon, #widgetPlayIcon, #widgetPauseIcon { transition: opacity .2s ease; }
   #playPauseIconGroup, #widgetPlayPauseIconGroup { transform-box: fill-box; transform-origin: center; }

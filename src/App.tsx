@@ -2002,6 +2002,13 @@ export default function App() {
 
       const fastCache: ExportFastCache = { cc: null, player: null, out: null, iconKey: 'x' };
 
+      // Matikan SEMUA transisi/animasi CSS selama render. Transisi CSS jalan berdasarkan waktu nyata
+      // (wall-clock), sedangkan loop export ini virtual-time & sekarang sangat cepat: tanpa ini,
+      // di frame-frame awal nilai opacity/transform/ikon yang dibaca masih "nyangkut" di state UI
+      // sebelumnya (mis. player masih kebuka) dan baru turun mengikuti jam asli -> muncul kedip aneh.
+      stage.classList.add('exporting');
+      void stage.offsetHeight; // paksa reflow supaya aturan no-transition berlaku sebelum frame 0
+
       try {
         for (let i = 0; i < totalFrames; i++) {
           // ==== 1. Advance state manual (deterministik) — elapsed timer & posisi video wallpaper ====
@@ -2146,6 +2153,7 @@ export default function App() {
       } finally {
         encoder.close();
         audioEncoder?.close();
+        stage.classList.remove('exporting');
         elapsed = originalElapsed;
         renderDuration();
         playerWrapEl.style.opacity = originalPlayerOpacity;
