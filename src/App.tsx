@@ -537,6 +537,8 @@ export default function App() {
       length: 345,
       coverRadius: 70,
       coverSmooth: 100,
+      pillRadius: 16,
+      pillSmooth: 60,
       ccOpacity: 20,
       stageZoom: 112,
       stageOffsetY: -3,
@@ -559,6 +561,11 @@ export default function App() {
     const ctrlCoverSmooth = $<HTMLInputElement>('ctrlCoverSmooth');
     const valCoverRadius = $('valCoverRadius');
     const valCoverSmooth = $('valCoverSmooth');
+    const ctrlPillRadius = $<HTMLInputElement>('ctrlPillRadius');
+    const ctrlPillSmooth = $<HTMLInputElement>('ctrlPillSmooth');
+    const valPillRadius = $('valPillRadius');
+    const valPillSmooth = $('valPillSmooth');
+    const airplayPillPath = $<SVGPathElement>('airplayPillPath');
     const albumArtClipPath = $<SVGPathElement>('albumArtClipPath');
     const albumArtPlaceholderPath = $<SVGPathElement>('albumArtPlaceholderPath');
     const resetBtn = $('resetBtn');
@@ -679,6 +686,21 @@ export default function App() {
       valCoverSmooth.textContent = sm + '%';
     }
 
+    // Pill "iPhone" (AirPlay) di Music Player: rect 94x32 di (121,541), radius maksimal = setengah tinggi (16).
+    function applyPillStyle() {
+      const r = Number(ctrlPillRadius.value),
+        sm = Number(ctrlPillSmooth.value);
+      const n = 2 + (sm / 100) * 3;
+      airplayPillPath.setAttribute('d', squirclePath(121, 541, 94, 32, r, n));
+      valPillRadius.textContent = r + 'px';
+      valPillSmooth.textContent = sm + '%';
+    }
+
+    [ctrlPillRadius, ctrlPillSmooth].forEach((el) => {
+      on(el, 'input', applyPillStyle);
+      on(el, 'click', (e: Event) => e.stopPropagation());
+    });
+
     [ctrlCoverRadius, ctrlCoverSmooth].forEach((el) => {
       on(el, 'input', applyAlbumArtStyle);
       on(el, 'click', (e: Event) => e.stopPropagation());
@@ -702,9 +724,12 @@ export default function App() {
       ctrlLength.value = String(DEFAULTS.length);
       ctrlCoverRadius.value = String(DEFAULTS.coverRadius);
       ctrlCoverSmooth.value = String(DEFAULTS.coverSmooth);
+      ctrlPillRadius.value = String(DEFAULTS.pillRadius);
+      ctrlPillSmooth.value = String(DEFAULTS.pillSmooth);
       renderDuration();
       applyCardStyle();
       applyAlbumArtStyle();
+      applyPillStyle();
       setBorderRotation(DEFAULTS.rotate);
     });
 
@@ -1028,6 +1053,7 @@ export default function App() {
         length: number;
       };
       cover: { radius: number; smoothing: number };
+      pill?: { radius: number; smoothing: number };
       ccOpacity: number;
       stage?: { zoom: number; offsetY: number };
       song: { title: string; artist: string; font: string };
@@ -1050,6 +1076,10 @@ export default function App() {
         cover: {
           radius: Number(ctrlCoverRadius.value),
           smoothing: Number(ctrlCoverSmooth.value),
+        },
+        pill: {
+          radius: Number(ctrlPillRadius.value),
+          smoothing: Number(ctrlPillSmooth.value),
         },
         ccOpacity: Number(ctrlCcOpacity.value),
         stage: {
@@ -1082,6 +1112,8 @@ export default function App() {
       ctrlLength.value = String(data.card.length);
       ctrlCoverRadius.value = String(data.cover.radius);
       ctrlCoverSmooth.value = String(data.cover.smoothing);
+      ctrlPillRadius.value = String(data.pill?.radius ?? DEFAULTS.pillRadius);
+      ctrlPillSmooth.value = String(data.pill?.smoothing ?? DEFAULTS.pillSmooth);
       ctrlCcOpacity.value = String(data.ccOpacity);
       ctrlStageZoom.value = String(data.stage?.zoom ?? DEFAULTS.stageZoom);
       ctrlStageOffsetY.value = String(data.stage?.offsetY ?? DEFAULTS.stageOffsetY);
@@ -1112,6 +1144,7 @@ export default function App() {
 
       applyCardStyle();
       applyAlbumArtStyle();
+      applyPillStyle();
       applyCcOpacity();
       applyStageTransform();
       applyMusicFont();
@@ -2218,6 +2251,7 @@ export default function App() {
     renderDuration();
     applyCardStyle();
     applyAlbumArtStyle();
+    applyPillStyle();
     applyCcOpacity();
     applyStageTransform();
     applyMusicFont();
