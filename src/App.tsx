@@ -142,6 +142,45 @@ async function rasterizeNode(
   }
 }
 
+
+// Cache render untuk Export Video: layer yang isinya tidak berubah antar frame (Control Center,
+// Music Player tanpa isi progress bar) cuma di-raster ulang kalau "kunci" state-nya berubah.
+type ExportFastCache = {
+  cc: { key: string; canvas: HTMLCanvasElement } | null;
+  player: { key: string; canvas: HTMLCanvasElement } | null;
+  out: HTMLCanvasElement | null;
+  iconKey: string; // diisi caller tiap frame (skala bounce ikon play/pause)
+};
+
+// Yield ke event loop tanpa kena throttle timer (setTimeout di tab background bisa dijepit ~1 detik).
+function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => {
+      ch.port1.close();
+      resolve();
+    };
+    ch.port2.postMessage(0);
+  });
+}
+
+// Gambar rounded rect terisi (fallback kalau ctx.roundRect belum ada).
+function fillRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.lineTo(x + w - rr, y);
+  ctx.arcTo(x + w, y, x + w, y + rr, rr);
+  ctx.lineTo(x + w, y + h - rr);
+  ctx.arcTo(x + w, y + h, x + w - rr, y + h, rr);
+  ctx.lineTo(x + rr, y + h);
+  ctx.arcTo(x, y + h, x, y + h - rr, rr);
+  ctx.lineTo(x, y + rr);
+  ctx.arcTo(x, y, x + rr, y, rr);
+  ctx.closePath();
+  ctx.fill();
+}
+
 // ==== Helper untuk panel Layers (hide/show elemen sebelum Export Frame) ====
 // Toggle di sini mengubah style.display LANGSUNG di elemen asli dalam #stage,
 // jadi tidak perlu ubah apa pun di logika export: rasterizeNode/clone yang sudah
@@ -1545,7 +1584,7 @@ export default function App() {
     // Capture SATU frame kanvas (state DOM saat fungsi ini dipanggil) → canvas EXPORT_W x EXPORT_H.
     // Dipakai baik oleh Export Frame maupun Export Video (dipanggil berulang per frame, dengan
     // state — elapsed, dll — sudah di-advance manual sebelum tiap panggilan).
-    async function captureStageCanvas(backgroundColor?: string): Promise<HTMLCanvasElement> {
+    async function captureStageCanvas(backgroundColor?: string, fast?: ExportFastCache): Promise<HTMLCanvasElement> {
       const rect = stageFrame.getBoundingClientRect();
       // Guard: kalau .stage-frame lagi berukuran 0 (misal ke-trigger saat belum ke-render/tersembunyi),
       // scale bakal jadi Infinity/NaN dan bikin canvas.width = Infinity → browser throw IndexSizeError
@@ -1566,31 +1605,57 @@ export default function App() {
       const playerRect = playerWrapEl.getBoundingClientRect();
       const playerOpacity = parseFloat(getComputedStyle(playerWrapEl).opacity || '1');
 
-      const ccClone = ccSvgEl.cloneNode(true) as SVGSVGElement;
-      // Progress dimming kartu Control Center disamain sama opacity Music Player saat ini —
-      // baik itu dari toggle manual (0/1 penuh) maupun dari nilai antara yang di-drive manual
-      // per-frame sama exportVideo (biar transisinya kerasa fade bareng, bukan potongan kasar).
-      bakeCcOpenDimming(ccClone, playerOpacity);
-
       const outCcW = Math.max(1, Math.round(ccRect.width * scale));
       const outCcH = Math.max(1, Math.round(ccRect.height * scale));
-      const ccCanvas = await rasterizeNode(ccClone, 450, 920, outCcW / 450);
+      // Mode cepat (Export Video): layer di-cache berdasarkan kunci state. Mode biasa: selalu raster baru.
+      const ccKey = fast ? `${playerOpacity.toFixed(4)}|${fast.iconKey}|${outCcW}x${outCcH}` : '';
+      let ccCanvas: HTMLCanvasElement;
+      if (fast && fast.cc && fast.cc.key === ccKey) {
+        ccCanvas = fast.cc.canvas;
+      } else {
+        const ccClone = ccSvgEl.cloneNode(true) as SVGSVGElement;
+        // Progress dimming kartu Control Center disamain sama opacity Music Player saat ini —
+        // baik itu dari toggle manual (0/1 penuh) maupun dari nilai antara yang di-drive manual
+        // per-frame sama exportVideo (biar transisinya kerasa fade bareng, bukan potongan kasar).
+        bakeCcOpenDimming(ccClone, playerOpacity);
+        ccCanvas = await rasterizeNode(ccClone, 450, 920, outCcW / 450);
+        if (fast) fast.cc = { key: ccKey, canvas: ccCanvas };
+      }
 
       let playerCanvas: HTMLCanvasElement | null = null;
       let outPlayerW = 0;
       let outPlayerH = 0;
       if (playerOpacity > 0.003) {
-        const playerClone = playerSvgEl.cloneNode(true) as SVGSVGElement;
         outPlayerW = Math.max(1, Math.round(playerRect.width * scale));
         outPlayerH = Math.max(1, Math.round(playerRect.height * scale));
-        playerCanvas = await rasterizeNode(playerClone, 336, 600, outPlayerW / 336);
+        // Mode cepat: isi progress bar TIDAK ikut di-raster (digambar manual di canvas per frame),
+        // jadi kunci cache cuma bergantung ke teks waktu (berubah ~1x/detik) + ikon + ukuran.
+        const playerKey = fast
+          ? `${timeElapsed.textContent}|${timeRemaining.textContent}|${fast.iconKey}|${outPlayerW}x${outPlayerH}`
+          : '';
+        if (fast && fast.player && fast.player.key === playerKey) {
+          playerCanvas = fast.player.canvas;
+        } else {
+          const playerClone = playerSvgEl.cloneNode(true) as SVGSVGElement;
+          if (fast) playerClone.querySelector('#progressFill')?.setAttribute('width', '0');
+          playerCanvas = await rasterizeNode(playerClone, 336, 600, outPlayerW / 336);
+          if (fast) fast.player = { key: playerKey, canvas: playerCanvas };
+        }
       }
 
-      const out = document.createElement('canvas');
-      out.width = EXPORT_W;
-      out.height = EXPORT_H;
-      const outCtx = out.getContext('2d');
+      let out: HTMLCanvasElement;
+      if (fast && fast.out) {
+        out = fast.out;
+      } else {
+        out = document.createElement('canvas');
+        out.width = EXPORT_W;
+        out.height = EXPORT_H;
+        if (fast) fast.out = out;
+      }
+      // willReadFrequently: canvas ini dibaca (getImageData) tiap frame di Export Video.
+      const outCtx = out.getContext('2d', fast ? { willReadFrequently: true } : undefined);
       if (!outCtx) throw new Error('Canvas context tidak tersedia');
+      outCtx.clearRect(0, 0, EXPORT_W, EXPORT_H);
       outCtx.imageSmoothingEnabled = true;
       outCtx.imageSmoothingQuality = 'high';
 
@@ -1620,6 +1685,16 @@ export default function App() {
         const playerY = Math.round((playerRect.top - rect.top) * scale);
         outCtx.globalAlpha = playerOpacity;
         outCtx.drawImage(playerCanvas, playerX, playerY, outPlayerW, outPlayerH);
+        if (fast) {
+          // Isi progress bar (rect x=27 y=391 h=7 rx=3.5 fill putih di SVG player) digambar manual.
+          const fillW = Number(progressFill.getAttribute('width')) || 0;
+          if (fillW > 0) {
+            const kx = outPlayerW / 336;
+            const ky = outPlayerH / 600;
+            outCtx.fillStyle = '#ffffff';
+            fillRoundRect(outCtx, playerX + 27 * kx, playerY + 391 * ky, fillW * kx, 7 * ky, 3.5 * Math.min(kx, ky));
+          }
+        }
         outCtx.globalAlpha = 1;
       }
 
@@ -1925,6 +2000,8 @@ export default function App() {
         : null;
       if (audioEncoder && desiredAudioConfig) audioEncoder.configure(desiredAudioConfig);
 
+      const fastCache: ExportFastCache = { cc: null, player: null, out: null, iconKey: 'x' };
+
       try {
         for (let i = 0; i < totalFrames; i++) {
           // ==== 1. Advance state manual (deterministik) — elapsed timer & posisi video wallpaper ====
@@ -1969,6 +2046,7 @@ export default function App() {
           pauseIcon.style.opacity = hasAudioForIcon ? '1' : '0';
           widgetPlayIcon.style.opacity = hasAudioForIcon ? '0' : '1';
           widgetPauseIcon.style.opacity = hasAudioForIcon ? '1' : '0';
+          fastCache.iconKey = hasAudioForIcon ? iconBounceScale(tSec).toFixed(4) : 'none';
           if (hasAudioForIcon) {
             const bounceScale = iconBounceScale(tSec).toFixed(4);
             playPauseIconGroup.style.transform = `scale(${bounceScale})`;
@@ -1977,7 +2055,7 @@ export default function App() {
 
           // ==== 2. Capture frame kanvas (reuse pipeline yang sama dengan Export Frame, tapi kali ini
           // di-flatten dulu ke videoBackgroundColor karena MP4 nggak punya alpha channel) ====
-          const canvas = await captureStageCanvas(videoBackgroundColor);
+          const canvas = await captureStageCanvas(videoBackgroundColor, fastCache);
 
           // ==== 3. Encode frame ====
           // PENTING: sengaja TIDAK kasih elemen <canvas> langsung ke `new VideoFrame(canvas, ...)`.
@@ -2000,9 +2078,19 @@ export default function App() {
           encoder.encode(frame, { keyFrame: i % (VIDEO_FPS * 2) === 0 });
           frame.close();
 
-          const pct = Math.round(((i + 1) / totalFrames) * 100);
-          exportVideoProgressFill.style.width = pct + '%';
-          exportVideoProgressLabel.textContent = `Merender frame ${i + 1}/${totalFrames}...`;
+          // Backpressure: jangan biarkan antrean encoder menumpuk (memori), tunggu sampai turun.
+          if (encoder.encodeQueueSize > 6) {
+            await new Promise<void>((resolve) => encoder.addEventListener('dequeue', () => resolve(), { once: true }));
+          }
+
+          // Update progress + yield ke UI tiap beberapa frame (loop dengan cache hampir tanpa await
+          // asli, jadi tanpa yield ini tampilan bisa freeze & label progress tidak ter-update).
+          if (i % 6 === 0 || i === totalFrames - 1) {
+            const pct = Math.round(((i + 1) / totalFrames) * 100);
+            exportVideoProgressFill.style.width = pct + '%';
+            exportVideoProgressLabel.textContent = `Merender frame ${i + 1}/${totalFrames}...`;
+            await yieldToMain();
+          }
         }
 
         // ==== 4. Encode audio (kalau ada) — loadedAudioBuffer adalah AudioBuffer utuh hasil decode
