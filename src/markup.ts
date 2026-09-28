@@ -179,9 +179,8 @@ export const STAGE_MARKUP = `
 `;
 
 export const PANELS_MARKUP = `
-  <div class="control-panel">
-    <h3>Customize Music Player Card</h3>
-    <div class="sub">Atur tampilan kartu music player</div>
+  <div class="control-panel" data-preview="player">
+    <h3>Teks &amp; Font</h3>
 
     <div class="row">
       <div class="row-head"><label for="ctrlSongTitle">Judul Lagu</label></div>
@@ -201,6 +200,11 @@ export const PANELS_MARKUP = `
       </select>
     </div>
 
+    </div>
+
+<div class="control-panel" data-preview="player">
+    <h3>Cover Album</h3>
+
     <div class="row">
       <div class="row-head"><label for="ctrlCoverRadius">Rounded Cover</label><span class="val" id="valCoverRadius">70px</span></div>
       <input type="range" id="ctrlCoverRadius" min="0" max="141" value="70">
@@ -211,6 +215,11 @@ export const PANELS_MARKUP = `
       <input type="range" id="ctrlCoverSmooth" min="0" max="100" value="100">
     </div>
 
+    </div>
+
+<div class="control-panel" data-preview="player">
+    <h3>Pill iPhone</h3>
+
     <div class="row">
       <div class="row-head"><label for="ctrlPillRadius">Rounded Pill iPhone</label><span class="val" id="valPillRadius">16px</span></div>
       <input type="range" id="ctrlPillRadius" min="0" max="16" value="16">
@@ -220,6 +229,11 @@ export const PANELS_MARKUP = `
       <div class="row-head"><label for="ctrlPillSmooth">Corner Smoothing Pill iPhone</label><span class="val" id="valPillSmooth">60%</span></div>
       <input type="range" id="ctrlPillSmooth" min="0" max="100" value="60">
     </div>
+
+    </div>
+
+<div class="control-panel" data-preview="player">
+    <h3>Kartu Music Player</h3>
 
     <div class="row">
       <div class="row-head"><label for="ctrlRadius">Rounded</label><span class="val" id="valRadius">125px</span></div>
@@ -246,6 +260,11 @@ export const PANELS_MARKUP = `
       <input type="range" id="ctrlOpacity" min="0" max="100" value="20">
     </div>
 
+    </div>
+
+<div class="control-panel" data-preview="player">
+    <h3>Garis Tepi (Highlight)</h3>
+
     <div class="row">
       <div class="row-head"><label>Rotate Garis Tepi</label><span class="val" id="valRotate">178°</span></div>
       <div class="knob-wrap">
@@ -261,7 +280,7 @@ export const PANELS_MARKUP = `
       <input type="range" id="ctrlLength" min="60" max="600" value="345">
     </div>
 
-    <button class="reset-btn" id="resetBtn">Reset ke default</button>
+    <button class="reset-btn" id="resetBtn">Reset semua pengaturan kartu</button>
   </div>
 
   <div class="control-panel">
@@ -281,7 +300,7 @@ export const PANELS_MARKUP = `
     <button class="reset-btn" id="resetStageBtn">Reset ke default</button>
   </div>
 
-  <div class="control-panel cc-opacity-panel">
+  <div class="control-panel cc-opacity-panel" data-preview="cc">
     <h3>Customize Control Center</h3>
     <div class="sub">Atur opacity semua kartu Control Center</div>
     <div class="row">

@@ -464,6 +464,34 @@ export default function App() {
     };
     on(stage, 'click', stageCloseHandler);
 
+    // ==== Accordion panel Customize: satu section terbuka sekali waktu, sisanya ciut jadi 1 baris header ====
+    // Section yang bertanda data-preview="player" otomatis membuka Music Player di kanvas (biar efek slider
+    // langsung kelihatan); data-preview="cc" menutupnya balik ke Control Center.
+    const panelEls = Array.from(panelStack.querySelectorAll<HTMLElement>('.control-panel'));
+    const syncPreviewFor = (panel: HTMLElement) => {
+      const mode = panel.dataset.preview;
+      const isOpen = stage.classList.contains('open');
+      if (mode === 'player' && !isOpen && audioCard) {
+        audioCard.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      } else if (mode === 'cc' && isOpen) {
+        stageCloseHandler();
+      }
+    };
+    panelEls.forEach((panel) => {
+      const header = panel.querySelector<HTMLElement>(':scope > h3');
+      if (!header) return;
+      on(header, 'click', (e: Event) => {
+        e.stopPropagation();
+        const willOpen = !panel.classList.contains('open');
+        panelEls.forEach((p) => p.classList.remove('open'));
+        if (willOpen) {
+          panel.classList.add('open');
+          syncPreviewFor(panel);
+          requestAnimationFrame(() => panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+        }
+      });
+    });
+
     // ==== Efek "ketekan" di kartu Control Center ====
     // .cc-hit itu cuma layer transparan buat nangkep klik — scale doang di rect
     // transparan itu gak keliatan sama sekali. Jadi di sini kita cari elemen visual

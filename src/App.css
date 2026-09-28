@@ -223,14 +223,16 @@
        ruang di bawahnya buat menu/panel tanpa harus scroll jauh. Kanvas tetap nempel (sticky) di
        atas dengan latar solid, jadi panel yang di-scroll lewat di belakangnya, bukan menimpanya. */
     .page-wrap { flex-direction: column; align-items: center; padding: 0 12px 40px; gap: 10px; }
-    .stage-col { width: 100%; align-items: center; gap: 8px; }
+    /* display: contents -> .stage-sticky jadi anak langsung .page-wrap (yang membungkus SELURUH halaman),
+       sehingga kanvas benar-benar tetap nempel di atas selama panel di bawahnya di-scroll. */
+    .stage-col { display: contents; }
     .stage-sticky {
       top: 0; width: calc(100% + 24px); margin: 0 -12px; padding: 8px 0 8px;
       display: flex; justify-content: center;
       background: #1b1b1f; box-shadow: 0 6px 12px -6px rgba(0,0,0,.6);
     }
     .stage-frame {
-      height: min(44vh, 44dvh, 520px); width: auto; max-width: 92vw;
+      height: min(40vh, 40dvh, 480px); width: auto; max-width: 92vw;
       border-radius: 20px;
     }
     /* Bar audio jadi ramping & selebar kanvas panel di bawahnya */
@@ -259,6 +261,8 @@
     .control-panel input[type="text"], .control-panel select { padding: 7px 10px; font-size: 13px; }
     .control-panel .reset-btn { padding: 8px; margin-top: 2px; }
     .layers-panel { margin-top: 6px; max-height: 300px; }
+    /* Saat section dibuka lalu di-scrollIntoView, jangan sampai ketutup kanvas yang sticky */
+    .panel-stack .control-panel { scroll-margin-top: calc(min(40dvh, 480px) + 24px); }
   }
   .knob-wrap { display: flex; justify-content: center; padding: 4px 0 2px; }
   .knob {
@@ -370,3 +374,17 @@
 }
 .export-preview-download { background: #0a84ff; border-color: #0a84ff; flex: 2; }
 .export-preview-download:active, .export-preview-close:active { opacity: .7; }
+
+/* ==== Accordion section di panel Customize ==== */
+.panel-stack .control-panel > h3 {
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; user-select: none; margin-bottom: 0;
+}
+.panel-stack .control-panel > h3::after {
+  content: "\2304"; color: #8e8e93; font-size: 16px; font-weight: 400;
+  transition: transform .2s ease;
+}
+.panel-stack .control-panel.open > h3 { margin-bottom: 8px; }
+.panel-stack .control-panel.open > h3::after { transform: rotate(180deg); }
+.panel-stack .control-panel:not(.open) > *:not(h3) { display: none; }
+.panel-stack .control-panel:not(.open) { padding-top: 12px; padding-bottom: 12px; }
