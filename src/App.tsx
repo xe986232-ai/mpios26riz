@@ -1875,6 +1875,9 @@ export default function App() {
       const originalPlayPauseGroupTransform = playPauseIconGroup.style.transform;
       const originalWidgetPlayPauseGroupTransform = widgetPlayPauseIconGroup.style.transform;
       stopTick();
+      // Hentikan audio live selama render supaya event 'ended'/'timeupdate' nggak nimpa `elapsed`
+      // di tengah loop (posisi progress di video harus murni dari frame ke-i).
+      if (wasPlaying) audioPreviewEl.pause();
 
       // Warna solid buat nimpa bagian transparan kartu (lihat catatan di deklarasi ctrlExportVideoBg
       // di atas) — dibaca sekali di awal, bukan tiap frame, karena nggak ada alasan buat berubah
@@ -1908,8 +1911,9 @@ export default function App() {
       try {
         for (let i = 0; i < totalFrames; i++) {
           // ==== 1. Advance state manual (deterministik) — elapsed timer & posisi video wallpaper ====
-          elapsed = originalElapsed + i / VIDEO_FPS;
-          if (songDuration > 0 && elapsed > songDuration) elapsed -= songDuration;
+          // SELALU mulai dari detik 0 (sama kayak audio & animasi lain di video ini), bukan dari
+          // posisi progress live di UI (originalElapsed) — itu penyebab progress bar ikut posisi live.
+          elapsed = Math.min(i / VIDEO_FPS, songDuration > 0 ? songDuration : Infinity);
           renderDuration();
 
           if (wallpaperVideoEl && wallpaperVideoEl.duration) {
@@ -2047,7 +2051,8 @@ export default function App() {
         widgetPauseIcon.style.opacity = originalWidgetPauseIconOpacity;
         playPauseIconGroup.style.transform = originalPlayPauseGroupTransform;
         widgetPlayPauseIconGroup.style.transform = originalWidgetPlayPauseGroupTransform;
-        if (wasPlaying) startTick();
+        startTick();
+        if (wasPlaying) void audioPreviewEl.play().catch(() => {});
         exportVideoBtn.disabled = false;
         exportFrameBtn.disabled = false;
         exportVideoBtn.textContent = originalLabel;
