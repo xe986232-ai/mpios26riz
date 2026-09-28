@@ -1066,9 +1066,9 @@ export default function App() {
       }
       ctrlBgZoom.value = String(data.bg?.zoom ?? 100);
       applyBgZoom();
-      ctrlBgBlur.value = String(data.bg?.blur ?? 0);
+      ctrlBgBlur.value = String(data.bg?.blur ?? 13);
       applyBgBlur();
-      ctrlBgOpacity.value = String(data.bg?.opacity ?? 100);
+      ctrlBgOpacity.value = String(data.bg?.opacity ?? 75);
       applyBgOpacity();
 
       applyCardStyle();
@@ -2121,16 +2121,16 @@ export default function App() {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <label htmlFor="ctrlBgBlur" style={{ fontSize: 13, color: '#d1d1d6' }}>Blur Background</label>
-              <span id="valBgBlur" style={{ color: '#0a84ff', fontVariantNumeric: 'tabular-nums', fontSize: 13 }}>0px</span>
+              <span id="valBgBlur" style={{ color: '#0a84ff', fontVariantNumeric: 'tabular-nums', fontSize: 13 }}>13px</span>
             </div>
-            <input type="range" id="ctrlBgBlur" min="0" max="30" step="1" defaultValue="0" style={{ width: '100%' }} />
+            <input type="range" id="ctrlBgBlur" min="0" max="30" step="1" defaultValue="13" style={{ width: '100%' }} />
           </div>
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <label htmlFor="ctrlBgOpacity" style={{ fontSize: 13, color: '#d1d1d6' }}>Opacity Background</label>
-              <span id="valBgOpacity" style={{ color: '#0a84ff', fontVariantNumeric: 'tabular-nums', fontSize: 13 }}>100%</span>
+              <span id="valBgOpacity" style={{ color: '#0a84ff', fontVariantNumeric: 'tabular-nums', fontSize: 13 }}>75%</span>
             </div>
-            <input type="range" id="ctrlBgOpacity" min="0" max="100" step="1" defaultValue="100" style={{ width: '100%' }} />
+            <input type="range" id="ctrlBgOpacity" min="0" max="100" step="1" defaultValue="75" style={{ width: '100%' }} />
           </div>
         </div>
         <div className="album-art-upload-wrap" id="albumArtUploadWrap">
