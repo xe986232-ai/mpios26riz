@@ -272,7 +272,7 @@ async function computeSpectrumTrack(buffer: AudioBuffer): Promise<SpectrumTrack>
   // Normalisasi ala equalizer: SATU skala bersama buat semua band, jadi bass (yang energinya memang
   // paling besar) tampil paling tinggi dan treble lebih kecil — tapi tetap hidup karena ada kompensasi
   // tilt (+3 dB/oktaf; musik alami turun ~4.5 dB/oktaf, jadi treble nggak mati total).
-  //  - langit-langit (hi): persentil 97 dari SEMUA band (setelah tilt) -> sama buat semua bar
+  //  - langit-langit (hi): persentil 92 dari SEMUA band (setelah tilt) -> sama buat semua bar
   //  - lantai (lo): persentil 8 tiap band sendiri, tapi dijaga maksimal 55 dB di bawah langit-langit,
   //    supaya band yang cuma kebagian "bocoran" dari band tetangga nggak ikut naik.
   const TILT_DB_PER_OCT = 3;
@@ -289,14 +289,14 @@ async function computeSpectrumTrack(buffer: AudioBuffer): Promise<SpectrumTrack>
     for (let f = 0; f < frames; f++) col[f] = db[f * SPECTRUM_BANDS + b];
     const sorted = col.slice().sort();
     loB.push(sorted[Math.floor(0.08 * (frames - 1))]);
-    his.push(sorted[Math.floor(0.97 * (frames - 1))]);
+    his.push(sorted[Math.floor(0.92 * (frames - 1))]);
   }
   const hi = Math.max(...his);
   for (let b = 0; b < SPECTRUM_BANDS; b++) {
     const lo = Math.min(Math.max(loB[b], hi - 55), hi - 6); // lagu hampir datar/senyap: jangan memperbesar noise jadi gerakan
     for (let f = 0; f < frames; f++) {
       const n = Math.min(1, Math.max(0, (db[f * SPECTRUM_BANDS + b] - lo) / (hi - lo)));
-      levels[f * SPECTRUM_BANDS + b] = Math.pow(n, 1.35);
+      levels[f * SPECTRUM_BANDS + b] = Math.pow(n, 1.1);
     }
   }
   return { fps: SPECTRUM_FPS, frames, levels };
@@ -1588,10 +1588,16 @@ export default function App() {
     // dibaca berdasarkan waktu putar. Pas nggak ada audio / lagi pause, bar balik ke pola diam.
     const spectrumEl = $<SVGGElement>('spectrum');
     const spectrumRects = Array.from(spectrumEl.querySelectorAll<SVGRectElement>('rect'));
+    // SPEC_SCALE = ukuran keseluruhan spectrum (1 = persis referensi screenshot). Ubah angka ini aja
+    // buat memperbesar/mengecilkan: lebar bar, jarak antar bar, dan tinggi semuanya ikut.
+    const SPEC_SCALE = 1.4;
     const SPEC_CY = 352.4; // titik tengah vertikal bar (unit SVG player)
-    const SPEC_MIN_H = 2; // bar paling pendek = titik bulat (lebar bar 2, rx 1)
-    const SPEC_MAX_H = 22.7;
-    const SPEC_REST_H = [8.8, 7.4, 20.4, 22.3, 22.7, 19.2]; // pola diam (sesuai referensi)
+    const SPEC_RIGHT = 298.4; // tepi kanan bar paling kanan — tetap di titik ini, membesar ke kiri
+    const SPEC_BAR_W = 2 * SPEC_SCALE;
+    const SPEC_STEP = 3.82 * SPEC_SCALE;
+    const SPEC_MIN_H = SPEC_BAR_W; // bar paling pendek = titik bulat
+    const SPEC_MAX_H = 22.7 * SPEC_SCALE;
+    const SPEC_REST_H = [8.8, 7.4, 20.4, 22.3, 22.7, 19.2].map((h) => h * SPEC_SCALE); // pola diam (sesuai referensi)
     const specCur = SPEC_REST_H.slice();
     const specTarget = SPEC_REST_H.slice();
     const specLevels: number[] = new Array(SPECTRUM_BANDS).fill(0);
@@ -1631,6 +1637,12 @@ export default function App() {
       }
       return moving;
     }
+    // Pasang geometri horizontal bar (x, lebar, rx) dari konstanta di atas.
+    spectrumRects.forEach((r, i) => {
+      r.setAttribute('width', SPEC_BAR_W.toFixed(2));
+      r.setAttribute('rx', (SPEC_BAR_W / 2).toFixed(2));
+      r.setAttribute('x', (SPEC_RIGHT - SPEC_BAR_W - (SPECTRUM_BANDS - 1 - i) * SPEC_STEP).toFixed(2));
+    });
     function resetSpectrumToRest() {
       for (let i = 0; i < SPECTRUM_BANDS; i++) {
         specCur[i] = SPEC_REST_H[i];
@@ -1638,6 +1650,7 @@ export default function App() {
       }
       applySpectrum();
     }
+    resetSpectrumToRest();
     function spectrumTick(now: number) {
       spectrumRaf = null;
       if (spectrumLocked) return;
