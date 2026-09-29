@@ -221,13 +221,13 @@ export const PANELS_MARKUP = `
     <h3>Pill iPhone</h3>
 
     <div class="row">
-      <div class="row-head"><label for="ctrlPillRadius">Rounded Pill iPhone</label><span class="val" id="valPillRadius">16px</span></div>
-      <input type="range" id="ctrlPillRadius" min="0" max="16" value="16">
+      <div class="row-head"><label for="ctrlPillRadius">Rounded Pill iPhone</label><span class="val" id="valPillRadius">10px</span></div>
+      <input type="range" id="ctrlPillRadius" min="0" max="16" value="10">
     </div>
 
     <div class="row">
-      <div class="row-head"><label for="ctrlPillSmooth">Corner Smoothing Pill iPhone</label><span class="val" id="valPillSmooth">60%</span></div>
-      <input type="range" id="ctrlPillSmooth" min="0" max="100" value="60">
+      <div class="row-head"><label for="ctrlPillSmooth">Corner Smoothing Pill iPhone</label><span class="val" id="valPillSmooth">100%</span></div>
+      <input type="range" id="ctrlPillSmooth" min="0" max="100" value="100">
     </div>
 
     </div>

@@ -565,8 +565,8 @@ export default function App() {
       length: 345,
       coverRadius: 70,
       coverSmooth: 100,
-      pillRadius: 16,
-      pillSmooth: 60,
+      pillRadius: 10,
+      pillSmooth: 100,
       ccOpacity: 20,
       stageZoom: 112,
       stageOffsetY: -3,
@@ -714,12 +714,64 @@ export default function App() {
       valCoverSmooth.textContent = sm + '%';
     }
 
+    // Rounded-rect dengan "continuous corner" ala iOS/Figma (bezier + arc). Beda dgn squirclePath
+    // (superellipse) yang bikin bentuk kecil seperti pill jadi kotak saat smoothing dinaikkan;
+    // di sini makin besar smoothing = transisi sudut makin panjang & halus, bentuk pill tetap bulat.
+    function smoothRectPath(
+      x0: number,
+      y0: number,
+      w: number,
+      h: number,
+      r: number,
+      smoothing: number
+    ) {
+      const budget = Math.min(w, h) / 2;
+      r = Math.max(0, Math.min(r, budget));
+      if (r < 0.5) return `M ${x0} ${y0} H ${x0 + w} V ${y0 + h} H ${x0} Z`;
+      const rad = (deg: number) => (deg * Math.PI) / 180;
+      const s = Math.max(0, Math.min(smoothing, budget / r - 1));
+      const p = Math.min((1 + s) * r, budget);
+      const arcMeasure = 90 * (1 - s);
+      const L = Math.sin(rad(arcMeasure / 2)) * r * Math.SQRT2;
+      const alpha = (90 - arcMeasure) / 2;
+      const p3p4 = r * Math.tan(rad(alpha / 2));
+      const beta = 45 * s;
+      const c = p3p4 * Math.cos(rad(beta));
+      const d = c * Math.tan(rad(beta));
+      const b = (p - L - c - d) / 3;
+      const a = 2 * b;
+      const f = (v: number) => +v.toFixed(3);
+      const R = f(r);
+      const ab = a + b,
+        abc = a + b + c,
+        bc = b + c;
+      const X1 = x0 + w,
+        Y1 = y0 + h;
+      return (
+        `M ${f(X1 - p)} ${f(y0)} ` +
+        // top-right
+        `c ${f(a)} 0 ${f(ab)} 0 ${f(abc)} ${f(d)} a ${R} ${R} 0 0 1 ${f(L)} ${f(L)} ` +
+        `c ${f(d)} ${f(c)} ${f(d)} ${f(bc)} ${f(d)} ${f(abc)} ` +
+        `L ${f(X1)} ${f(Y1 - p)} ` +
+        // bottom-right
+        `c 0 ${f(a)} 0 ${f(ab)} ${f(-d)} ${f(abc)} a ${R} ${R} 0 0 1 ${f(-L)} ${f(L)} ` +
+        `c ${f(-c)} ${f(d)} ${f(-bc)} ${f(d)} ${f(-abc)} ${f(d)} ` +
+        `L ${f(x0 + p)} ${f(Y1)} ` +
+        // bottom-left
+        `c ${f(-a)} 0 ${f(-ab)} 0 ${f(-abc)} ${f(-d)} a ${R} ${R} 0 0 1 ${f(-L)} ${f(-L)} ` +
+        `c ${f(-d)} ${f(-c)} ${f(-d)} ${f(-bc)} ${f(-d)} ${f(-abc)} ` +
+        `L ${f(x0)} ${f(y0 + p)} ` +
+        // top-left
+        `c 0 ${f(-a)} 0 ${f(-ab)} ${f(d)} ${f(-abc)} a ${R} ${R} 0 0 1 ${f(L)} ${f(-L)} ` +
+        `c ${f(c)} ${f(-d)} ${f(bc)} ${f(-d)} ${f(abc)} ${f(-d)} Z`
+      );
+    }
+
     // Pill "iPhone" (AirPlay) di Music Player: rect 94x32 di (121,541), radius maksimal = setengah tinggi (16).
     function applyPillStyle() {
       const r = Number(ctrlPillRadius.value),
         sm = Number(ctrlPillSmooth.value);
-      const n = 2 + (sm / 100) * 3;
-      airplayPillPath.setAttribute('d', squirclePath(121, 541, 94, 32, r, n));
+      airplayPillPath.setAttribute('d', smoothRectPath(121, 541, 94, 32, r, sm / 100));
       valPillRadius.textContent = r + 'px';
       valPillSmooth.textContent = sm + '%';
     }
