@@ -123,8 +123,8 @@ export const STAGE_MARKUP = `
 <path id="albumArtPlaceholderPath" d="M27 27 H309 V309 H27 Z" fill="white"/>
 </g>
 <image id="albumArtImage" x="27" y="27" width="282" height="282" clip-path="url(#albumArtClip)" preserveAspectRatio="xMidYMid slice" opacity="0" href="" xlink:href=""/>
-<text id="songTitle" x="27.5" y="358" fill="white" font-family="'SF Pro Display Black', sans-serif" font-size="16" font-weight="600" letter-spacing="0.1">Apple</text>
-<text id="songArtist" x="27.5" y="376" fill="white" fill-opacity="0.6" font-family="'SF Pro Display Black', sans-serif" font-size="13" font-weight="400" letter-spacing="0.1">Charli XCX</text>
+<text id="songTitle" x="27.5" y="347.5" fill="white" font-family="'SF Pro Display Black', sans-serif" font-size="16" font-weight="600" letter-spacing="0.1">Apple</text>
+<text id="songArtist" x="27.5" y="368.5" fill="white" fill-opacity="0.6" font-family="'SF Pro Display Black', sans-serif" font-size="13" font-weight="400" letter-spacing="0.1">Charli XCX</text>
 <text id="timeElapsed" x="27.5" y="419.3" fill="white" fill-opacity="0.8" font-family="'SF Pro Display Black', sans-serif" font-size="12" letter-spacing="0.2">0:00</text>
 <text id="timeRemaining" x="308.5" y="419.3" text-anchor="end" fill="white" fill-opacity="0.5" font-family="'SF Pro Display Black', sans-serif" font-size="12" letter-spacing="0.2">-0:00</text>
 <g id="playPauseIconGroup">
