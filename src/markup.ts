@@ -113,6 +113,7 @@ export const STAGE_MARKUP = `
 <clipPath id="clip3_2570_20912">
 <rect x="233" y="326" width="70" height="155" rx="34" fill="white"/>
 </clipPath>
+<clipPath id="widgetAlbumArtClip"><rect x="245.666" y="168.333" width="53.666" height="53.666" rx="14"/></clipPath>
 </defs>
 </svg></div>
     <div class="player" id="player"><svg width="336" height="600" viewBox="0 0 336 600" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -160,7 +161,6 @@ export const STAGE_MARKUP = `
 </g>
 <defs>
 <clipPath id="cardClip" clipPathUnits="userSpaceOnUse"><path id="cardClipPath" d=""/></clipPath>
-<clipPath id="widgetAlbumArtClip"><rect x="245.666" y="168.333" width="53.666" height="53.666" rx="14"/></clipPath>
 <linearGradient id="mpBorder" x1="168" y1="0" x2="168" y2="600" gradientUnits="userSpaceOnUse"><stop stop-color="white"/><stop offset="0.12" stop-color="white" stop-opacity="0.1"/><stop offset="0.88" stop-color="white" stop-opacity="0.1"/><stop offset="1" stop-color="white"/></linearGradient>
 <filter id="filter0_d_7_122" x="11" y="13" width="314" height="314" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
 <feFlood flood-opacity="0" result="BackgroundImageFix"/>
