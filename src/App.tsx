@@ -181,6 +181,132 @@ function fillRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
   ctx.fill();
 }
 
+// ==== Spectrum audio ====
+// 6 bar di sebelah judul lagu bergerak ngikutin frekuensi audio yang di-upload. Analisisnya dihitung
+// SEKALI dari AudioBuffer hasil decode (FFT offline), bukan lewat AnalyserNode real-time, supaya
+// jalur yang sama bisa dipakai buat preview live DAN Export Video (yang di-render frame demi frame
+// dari detik 0, nggak real-time) dan hasilnya identik.
+const SPECTRUM_BANDS = 6;
+const SPECTRUM_FFT = 2048;
+const SPECTRUM_FPS = 50; // resolusi waktu analisis (frame level per detik)
+const SPECTRUM_EDGES_HZ = [50, 140, 350, 900, 2200, 5500, 14000]; // batas 6 band (skala log: bass -> treble)
+
+type SpectrumTrack = { fps: number; frames: number; levels: Float32Array }; // levels: frames * SPECTRUM_BANDS, 0..1
+
+async function computeSpectrumTrack(buffer: AudioBuffer): Promise<SpectrumTrack> {
+  const N = SPECTRUM_FFT;
+  const sr = buffer.sampleRate;
+  const ch0 = buffer.getChannelData(0);
+  const ch1 = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : null;
+  const hop = sr / SPECTRUM_FPS;
+  const frames = Math.max(1, Math.floor(buffer.length / hop));
+
+  // Tabel FFT radix-2 (bit reversal, twiddle, jendela Hann) — dihitung sekali.
+  const bits = Math.round(Math.log2(N));
+  const rev = new Uint16Array(N);
+  for (let i = 0; i < N; i++) {
+    let r = 0;
+    for (let b = 0; b < bits; b++) if (i & (1 << b)) r |= 1 << (bits - 1 - b);
+    rev[i] = r;
+  }
+  const cosT = new Float32Array(N / 2);
+  const sinT = new Float32Array(N / 2);
+  for (let i = 0; i < N / 2; i++) {
+    const a = (-2 * Math.PI * i) / N;
+    cosT[i] = Math.cos(a);
+    sinT[i] = Math.sin(a);
+  }
+  const hann = new Float32Array(N);
+  for (let i = 0; i < N; i++) hann[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1));
+
+  // Rentang bin FFT tiap band (dijepit ke Nyquist kalau sample rate rendah).
+  const nyq = sr / 2;
+  const binOf = (hz: number) => Math.min(N / 2, Math.max(1, Math.round((Math.min(hz, nyq * 0.98) * N) / sr)));
+  const bandLo: number[] = [];
+  const bandHi: number[] = [];
+  for (let b = 0; b < SPECTRUM_BANDS; b++) {
+    const k0 = binOf(SPECTRUM_EDGES_HZ[b]);
+    bandLo.push(k0);
+    bandHi.push(Math.min(N / 2, Math.max(k0 + 1, binOf(SPECTRUM_EDGES_HZ[b + 1]))));
+  }
+
+  const re = new Float32Array(N);
+  const im = new Float32Array(N);
+  const db = new Float32Array(frames * SPECTRUM_BANDS);
+
+  for (let f = 0; f < frames; f++) {
+    const start = Math.round(f * hop + hop / 2 - N / 2);
+    for (let i = 0; i < N; i++) {
+      const idx = start + i;
+      let v = 0;
+      if (idx >= 0 && idx < buffer.length) v = ch1 ? (ch0[idx] + ch1[idx]) * 0.5 : ch0[idx];
+      re[rev[i]] = v * hann[i];
+      im[rev[i]] = 0;
+    }
+    for (let size = 2; size <= N; size <<= 1) {
+      const half = size >> 1;
+      const step = N / size;
+      for (let i = 0; i < N; i += size) {
+        for (let j = 0, k = 0; j < half; j++, k += step) {
+          const a = i + j;
+          const c = a + half;
+          const tr = re[c] * cosT[k] - im[c] * sinT[k];
+          const ti = re[c] * sinT[k] + im[c] * cosT[k];
+          re[c] = re[a] - tr;
+          im[c] = im[a] - ti;
+          re[a] += tr;
+          im[a] += ti;
+        }
+      }
+    }
+    for (let b = 0; b < SPECTRUM_BANDS; b++) {
+      let p = 0;
+      for (let k = bandLo[b]; k < bandHi[b]; k++) p += re[k] * re[k] + im[k] * im[k];
+      p /= bandHi[b] - bandLo[b];
+      db[f * SPECTRUM_BANDS + b] = 10 * Math.log10(p / (N * N) + 1e-12);
+    }
+    // Yield berkala: lagu panjang = ribuan FFT, jangan sampai UI freeze (penting di HP).
+    if (f % 250 === 249) await yieldToMain();
+  }
+
+  // Normalisasi PER BAND ke 0..1 (persentil 8 -> 97), jadi semua bar sama-sama hidup
+  // walau energi bass jauh lebih besar dari treble, dan nggak tergantung keras/pelannya lagu.
+  // Batas atas tiap band dijaga maksimal 40 dB di bawah band terkeras, supaya band yang sebenarnya
+  // cuma kebagian "bocoran" dari band tetangga (mis. nada murni) nggak ikut diperbesar jadi gerakan.
+  const levels = new Float32Array(db.length);
+  const col = new Float32Array(frames);
+  const loB: number[] = [];
+  const hiB: number[] = [];
+  for (let b = 0; b < SPECTRUM_BANDS; b++) {
+    for (let f = 0; f < frames; f++) col[f] = db[f * SPECTRUM_BANDS + b];
+    const sorted = col.slice().sort();
+    loB.push(sorted[Math.floor(0.08 * (frames - 1))]);
+    hiB.push(sorted[Math.floor(0.97 * (frames - 1))]);
+  }
+  const globalHi = Math.max(...hiB);
+  for (let b = 0; b < SPECTRUM_BANDS; b++) {
+    const lo = loB[b];
+    let hi = Math.max(hiB[b], globalHi - 40);
+    if (hi - lo < 6) hi = lo + 6; // lagu hampir datar/senyap: jangan memperbesar noise jadi gerakan
+    for (let f = 0; f < frames; f++) {
+      const n = Math.min(1, Math.max(0, (db[f * SPECTRUM_BANDS + b] - lo) / (hi - lo)));
+      levels[f * SPECTRUM_BANDS + b] = Math.pow(n, 1.35);
+    }
+  }
+  return { fps: SPECTRUM_FPS, frames, levels };
+}
+
+// Level 6 band pada detik `t` (interpolasi linear antar frame analisis) -> ditulis ke `out`.
+function spectrumLevelsAt(track: SpectrumTrack, t: number, out: number[]) {
+  const pos = Math.max(0, t) * track.fps;
+  const f0 = Math.min(track.frames - 1, Math.floor(pos));
+  const f1 = Math.min(track.frames - 1, f0 + 1);
+  const a = Math.min(1, Math.max(0, pos - f0));
+  for (let b = 0; b < SPECTRUM_BANDS; b++) {
+    out[b] = track.levels[f0 * SPECTRUM_BANDS + b] * (1 - a) + track.levels[f1 * SPECTRUM_BANDS + b] * a;
+  }
+}
+
 // ==== Helper untuk panel Layers (hide/show elemen sebelum Export Frame) ====
 // Toggle di sini mengubah style.display LANGSUNG di elemen asli dalam #stage,
 // jadi tidak perlu ubah apa pun di logika export: rasterizeNode/clone yang sudah
@@ -1451,6 +1577,94 @@ export default function App() {
       playheadRaf = requestAnimationFrame(tick);
     }
 
+    // ==== Spectrum: 6 bar di sebelah judul lagu, bergerak ngikutin frekuensi audio yang di-upload ====
+    // Level per band dianalisis sekali saat file di-load (computeSpectrumTrack), lalu di sini tinggal
+    // dibaca berdasarkan waktu putar. Pas nggak ada audio / lagi pause, bar balik ke pola diam.
+    const spectrumEl = $<SVGGElement>('spectrum');
+    const spectrumRects = Array.from(spectrumEl.querySelectorAll<SVGRectElement>('rect'));
+    const SPEC_CY = 352.4; // titik tengah vertikal bar (unit SVG player)
+    const SPEC_MIN_H = 2; // bar paling pendek = titik bulat (lebar bar 2, rx 1)
+    const SPEC_MAX_H = 22.7;
+    const SPEC_REST_H = [8.8, 7.4, 20.4, 22.3, 22.7, 19.2]; // pola diam (sesuai referensi)
+    const specCur = SPEC_REST_H.slice();
+    const specTarget = SPEC_REST_H.slice();
+    const specLevels: number[] = new Array(SPECTRUM_BANDS).fill(0);
+    let spectrumTrack: SpectrumTrack | null = null;
+    let spectrumTrackPromise: Promise<void> | null = null;
+    let spectrumRaf: number | null = null;
+    let spectrumLast = 0;
+    let spectrumLocked = false; // true selama Export Video (di situ bar di-drive manual per frame)
+
+    function applySpectrum() {
+      spectrumRects.forEach((r, i) => {
+        const h = specCur[i];
+        r.setAttribute('y', (SPEC_CY - h / 2).toFixed(2));
+        r.setAttribute('height', h.toFixed(2));
+      });
+    }
+    // Isi specTarget (tinggi bar tujuan) dari analisis di detik `t`; tanpa analisis -> pola diam.
+    function setSpectrumTargetAt(t: number) {
+      if (!spectrumTrack) {
+        for (let i = 0; i < SPECTRUM_BANDS; i++) specTarget[i] = SPEC_REST_H[i];
+        return;
+      }
+      spectrumLevelsAt(spectrumTrack, t, specLevels);
+      for (let i = 0; i < SPECTRUM_BANDS; i++) specTarget[i] = SPEC_MIN_H + specLevels[i] * (SPEC_MAX_H - SPEC_MIN_H);
+    }
+    // Geser tinggi bar sekarang menuju target: naik cepat (attack), turun pelan (release) biar
+    // gerakannya enak dilihat, bukan kedip. Return true kalau masih ada bar yang belum sampai.
+    function stepSpectrum(dt: number, live: boolean) {
+      let moving = false;
+      for (let i = 0; i < SPECTRUM_BANDS; i++) {
+        const tgt = specTarget[i];
+        const cur = specCur[i];
+        const tau = live ? (tgt > cur ? 0.03 : 0.11) : 0.16;
+        const next = cur + (tgt - cur) * (1 - Math.exp(-dt / tau));
+        specCur[i] = next;
+        if (Math.abs(tgt - next) > 0.05) moving = true;
+      }
+      return moving;
+    }
+    function resetSpectrumToRest() {
+      for (let i = 0; i < SPECTRUM_BANDS; i++) {
+        specCur[i] = SPEC_REST_H[i];
+        specTarget[i] = SPEC_REST_H[i];
+      }
+      applySpectrum();
+    }
+    function spectrumTick(now: number) {
+      spectrumRaf = null;
+      if (spectrumLocked) return;
+      const dt = Math.min(0.1, Math.max(0.001, (now - spectrumLast) / 1000));
+      spectrumLast = now;
+      const live = !!spectrumTrack && !audioPreviewEl.paused && !audioPreviewEl.ended;
+      if (live) setSpectrumTargetAt(audioPreviewEl.currentTime);
+      else for (let i = 0; i < SPECTRUM_BANDS; i++) specTarget[i] = SPEC_REST_H[i];
+      const moving = stepSpectrum(dt, live);
+      applySpectrum();
+      if (live || moving) spectrumRaf = requestAnimationFrame(spectrumTick);
+    }
+    function ensureSpectrumLoop() {
+      if (spectrumRaf !== null || spectrumLocked) return;
+      spectrumLast = performance.now();
+      spectrumRaf = requestAnimationFrame(spectrumTick);
+    }
+    // Analisis di background (chunked); kalau file diganti di tengah jalan, hasil lama dibuang.
+    function startSpectrumAnalysis(buffer: AudioBuffer) {
+      spectrumTrack = null;
+      spectrumTrackPromise = computeSpectrumTrack(buffer)
+        .then((track) => {
+          if (loadedAudioBuffer !== buffer) return;
+          spectrumTrack = track;
+          ensureSpectrumLoop();
+        })
+        .catch((err) => console.error('Analisis spectrum gagal:', err));
+    }
+    cleanupFns.push(() => {
+      if (spectrumRaf !== null) cancelAnimationFrame(spectrumRaf);
+      spectrumRaf = null;
+    });
+
     async function handleAudioFile(file: File) {
       try {
         const arrayBuffer = await file.arrayBuffer();
@@ -1458,6 +1672,7 @@ export default function App() {
         const decodeCtx = new AudioCtx();
         const decoded = await decodeCtx.decodeAudioData(arrayBuffer);
         loadedAudioBuffer = decoded;
+        startSpectrumAnalysis(decoded);
         void decodeCtx.close();
 
         // Sumber pemutaran preview: <audio> biasa via object URL (lebih ringan daripada re-decode ke Web Audio API tiap play)
@@ -1533,12 +1748,14 @@ export default function App() {
       setPlayIconState(true);
       reflectPlayingState(true);
       startPlayheadLoop();
+      ensureSpectrumLoop();
     });
     on(audioPreviewEl, 'pause', () => {
       setPlayIconState(false);
       reflectPlayingState(false);
       stopPlayheadLoop();
       cancelAutoOpen(); // audio berhenti -> logic auto-buka ikut dibatalin
+      ensureSpectrumLoop(); // biar bar turun pelan balik ke pola diam
     });
     on(audioPreviewEl, 'ended', () => {
       setPlayIconState(false);
@@ -1547,6 +1764,7 @@ export default function App() {
       renderWaveformCanvas(0);
       elapsed = songDuration;
       renderDuration();
+      ensureSpectrumLoop();
     });
     // Metadata (termasuk durasi asli) baru pasti akurat begitu browser selesai membacanya —
     // di sinilah progress bar & label durasi Music Player disamakan ke durasi audio yang di-upload.
@@ -1750,7 +1968,11 @@ export default function App() {
           playerCanvas = fast.player.canvas;
         } else {
           const playerClone = playerSvgEl.cloneNode(true) as SVGSVGElement;
-          if (fast) playerClone.querySelector('#progressFill')?.setAttribute('width', '0');
+          if (fast) {
+            playerClone.querySelector('#progressFill')?.setAttribute('width', '0');
+            // Spectrum bergerak tiap frame -> jangan ikut di-cache di raster, digambar manual di bawah.
+            playerClone.querySelector('#spectrum')?.remove();
+          }
           playerCanvas = await rasterizeNode(playerClone, 336, 600, outPlayerW / 336);
           if (fast) fast.player = { key: playerKey, canvas: playerCanvas };
         }
@@ -1807,6 +2029,17 @@ export default function App() {
             outCtx.fillStyle = '#ffffff';
             fillRoundRect(outCtx, playerX + 27 * kx, playerY + 391 * ky, fillW * kx, 7 * ky, 3.5 * Math.min(kx, ky));
           }
+          // Bar spectrum (posisi/tinggi terbaru dibaca dari elemen SVG live, sudah di-update per frame).
+          const skx = outPlayerW / 336;
+          const sky = outPlayerH / 600;
+          outCtx.fillStyle = '#ffffff';
+          spectrumRects.forEach((r) => {
+            const bx = Number(r.getAttribute('x')) || 0;
+            const by = Number(r.getAttribute('y')) || 0;
+            const bw = Number(r.getAttribute('width')) || 0;
+            const bh = Number(r.getAttribute('height')) || 0;
+            fillRoundRect(outCtx, playerX + bx * skx, playerY + by * sky, bw * skx, bh * sky, (bw / 2) * Math.min(skx, sky));
+          });
         }
         outCtx.globalAlpha = 1;
       }
@@ -2169,6 +2402,16 @@ export default function App() {
       void stage.offsetHeight; // paksa reflow supaya aturan no-transition berlaku sebelum frame 0
 
       try {
+        // Spectrum di-drive manual per frame di loop ini (bukan dari loop live), jadi kunci loop live
+        // dulu, tunggu analisis kelar (kalau file baru di-upload), lalu mulai dari pola diam.
+        spectrumLocked = true;
+        if (spectrumRaf !== null) {
+          cancelAnimationFrame(spectrumRaf);
+          spectrumRaf = null;
+        }
+        if (spectrumTrackPromise) await spectrumTrackPromise;
+        resetSpectrumToRest();
+
         for (let i = 0; i < totalFrames; i++) {
           // ==== 1. Advance state manual (deterministik) — elapsed timer & posisi video wallpaper ====
           // SELALU mulai dari detik 0 (sama kayak audio & animasi lain di video ini), bukan dari
@@ -2218,6 +2461,13 @@ export default function App() {
             playPauseIconGroup.style.transform = `scale(${bounceScale})`;
             widgetPlayPauseIconGroup.style.transform = `scale(${bounceScale})`;
           }
+
+          // ==== 1d. Spectrum: level dibaca dari analisis di detik frame ini (audio dianggap main dari
+          // detik 0, sama kayak ikon pause di atas), di-smooth pakai dt = 1/FPS biar deterministik.
+          if (hasAudioForIcon) setSpectrumTargetAt(tSec);
+          else for (let k = 0; k < SPECTRUM_BANDS; k++) specTarget[k] = SPEC_REST_H[k];
+          stepSpectrum(1 / VIDEO_FPS, true);
+          applySpectrum();
 
           // ==== 2. Capture frame kanvas (reuse pipeline yang sama dengan Export Frame, tapi kali ini
           // di-flatten dulu ke videoBackgroundColor karena MP4 nggak punya alpha channel) ====
@@ -2320,6 +2570,8 @@ export default function App() {
         playPauseIconGroup.style.transform = originalPlayPauseGroupTransform;
         widgetPlayPauseIconGroup.style.transform = originalWidgetPlayPauseGroupTransform;
         startTick();
+        spectrumLocked = false;
+        resetSpectrumToRest();
         if (wasPlaying) void audioPreviewEl.play().catch(() => {});
         exportVideoBtn.disabled = false;
         exportFrameBtn.disabled = false;
