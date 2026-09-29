@@ -269,25 +269,31 @@ async function computeSpectrumTrack(buffer: AudioBuffer): Promise<SpectrumTrack>
     if (f % 250 === 249) await yieldToMain();
   }
 
-  // Normalisasi PER BAND ke 0..1 (persentil 8 -> 97), jadi semua bar sama-sama hidup
-  // walau energi bass jauh lebih besar dari treble, dan nggak tergantung keras/pelannya lagu.
-  // Batas atas tiap band dijaga maksimal 40 dB di bawah band terkeras, supaya band yang sebenarnya
-  // cuma kebagian "bocoran" dari band tetangga (mis. nada murni) nggak ikut diperbesar jadi gerakan.
+  // Normalisasi ala equalizer: SATU skala bersama buat semua band, jadi bass (yang energinya memang
+  // paling besar) tampil paling tinggi dan treble lebih kecil — tapi tetap hidup karena ada kompensasi
+  // tilt (+3 dB/oktaf; musik alami turun ~4.5 dB/oktaf, jadi treble nggak mati total).
+  //  - langit-langit (hi): persentil 97 dari SEMUA band (setelah tilt) -> sama buat semua bar
+  //  - lantai (lo): persentil 8 tiap band sendiri, tapi dijaga maksimal 55 dB di bawah langit-langit,
+  //    supaya band yang cuma kebagian "bocoran" dari band tetangga nggak ikut naik.
+  const TILT_DB_PER_OCT = 3;
+  const centerHz = (b: number) => Math.sqrt(SPECTRUM_EDGES_HZ[b] * SPECTRUM_EDGES_HZ[b + 1]);
+  const tilt: number[] = [];
+  for (let b = 0; b < SPECTRUM_BANDS; b++) tilt.push(TILT_DB_PER_OCT * Math.log2(centerHz(b) / centerHz(0)));
+  for (let f = 0; f < frames; f++) for (let b = 0; b < SPECTRUM_BANDS; b++) db[f * SPECTRUM_BANDS + b] += tilt[b];
+
   const levels = new Float32Array(db.length);
   const col = new Float32Array(frames);
   const loB: number[] = [];
-  const hiB: number[] = [];
+  const his: number[] = [];
   for (let b = 0; b < SPECTRUM_BANDS; b++) {
     for (let f = 0; f < frames; f++) col[f] = db[f * SPECTRUM_BANDS + b];
     const sorted = col.slice().sort();
     loB.push(sorted[Math.floor(0.08 * (frames - 1))]);
-    hiB.push(sorted[Math.floor(0.97 * (frames - 1))]);
+    his.push(sorted[Math.floor(0.97 * (frames - 1))]);
   }
-  const globalHi = Math.max(...hiB);
+  const hi = Math.max(...his);
   for (let b = 0; b < SPECTRUM_BANDS; b++) {
-    const lo = loB[b];
-    let hi = Math.max(hiB[b], globalHi - 40);
-    if (hi - lo < 6) hi = lo + 6; // lagu hampir datar/senyap: jangan memperbesar noise jadi gerakan
+    const lo = Math.min(Math.max(loB[b], hi - 55), hi - 6); // lagu hampir datar/senyap: jangan memperbesar noise jadi gerakan
     for (let f = 0; f < frames; f++) {
       const n = Math.min(1, Math.max(0, (db[f * SPECTRUM_BANDS + b] - lo) / (hi - lo)));
       levels[f * SPECTRUM_BANDS + b] = Math.pow(n, 1.35);
