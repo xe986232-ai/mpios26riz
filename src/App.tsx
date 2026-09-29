@@ -1590,7 +1590,7 @@ export default function App() {
     const spectrumRects = Array.from(spectrumEl.querySelectorAll<SVGRectElement>('rect'));
     // SPEC_SCALE = ukuran keseluruhan spectrum (1 = persis referensi screenshot). Ubah angka ini aja
     // buat memperbesar/mengecilkan: lebar bar, jarak antar bar, dan tinggi semuanya ikut.
-    const SPEC_SCALE = 1.4;
+    const SPEC_SCALE = 1;
     const SPEC_CY = 352.4; // titik tengah vertikal bar (unit SVG player)
     const SPEC_RIGHT = 298.4; // tepi kanan bar paling kanan — tetap di titik ini, membesar ke kiri
     const SPEC_BAR_W = 2 * SPEC_SCALE;
